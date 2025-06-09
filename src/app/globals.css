@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 260 60% 10%; /* Deep Indigo/Purple */
+    --foreground: 210 15% 95%; /* Light Grey */
+
+    --card: 260 50% 15%; /* Slightly Lighter Indigo */
+    --card-foreground: 210 15% 95%;
+
+    --popover: 260 50% 18%; /* Popover bg */
+    --popover-foreground: 210 15% 95%;
+
+    --primary: 180 100% 50%; /* Bright Cyan */
+    --primary-foreground: 260 100% 10%; /* Dark for contrast on cyan */
+
+    --secondary: 240 40% 30%; /* Muted Blue/Purple */
+    --secondary-foreground: 210 15% 95%;
+
+    --muted: 260 30% 25%; /* Muted purple */
+    --muted-foreground: 210 15% 70%; /* Lighter grey for muted text */
+
+    --accent: 330 100% 55%; /* Hot Pink */
+    --accent-foreground: 0 0% 100%; /* White for contrast on pink */
+
+    --destructive: 0 84.2% 60.2%; /* Keep standard destructive */
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 260 40% 25%; /* Themed border */
+    --input: 260 40% 22%; /* Themed input bg */
+    --ring: 330 100% 55%; /* Accent color for rings (Hot Pink) */
+
+    --chart-1: 180 100% 50%; /* Primary - Cyan */
+    --chart-2: 330 100% 55%; /* Accent - Hot Pink */
+    --chart-3: 240 60% 60%; /* A lighter purple */
+    --chart-4: 45 100% 50%; /* Bright Yellow */
+    --chart-5: 120 70% 60%; /* Bright Green */
+
+    --radius: 0.3rem; /* Sharper corners */
+
+    /* Sidebar variables updated to match the theme */
+    --sidebar-background: 260 60% 8%; /* Even darker for sidebar bg */
+    --sidebar-foreground: 210 15% 85%;
+    --sidebar-primary: 180 100% 50%; /* Cyan */
+    --sidebar-primary-foreground: 260 100% 10%;
+    --sidebar-accent: 330 100% 55%; /* Hot Pink */
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 260 50% 20%;
+    --sidebar-ring: 330 100% 55%;
+  }
+
+  .dark {
+    --background: 260 60% 10%;
+    --foreground: 210 15% 95%;
+    --card: 260 50% 15%;
+    --card-foreground: 210 15% 95%;
+    --popover: 260 50% 18%;
+    --popover-foreground: 210 15% 95%;
+    --primary: 180 100% 50%;
+    --primary-foreground: 260 100% 10%;
+    --secondary: 240 40% 30%;
+    --secondary-foreground: 210 15% 95%;
+    --muted: 260 30% 25%;
+    --muted-foreground: 210 15% 70%;
+    --accent: 330 100% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72.2% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 260 40% 25%;
+    --input: 260 40% 22%;
+    --ring: 330 100% 55%;
+    --chart-1: 180 100% 50%;
+    --chart-2: 330 100% 55%;
+    --chart-3: 240 60% 60%;
+    --chart-4: 45 100% 50%;
+    --chart-5: 120 70% 60%;
+
+    --sidebar-background: 260 60% 8%;
+    --sidebar-foreground: 210 15% 85%;
+    --sidebar-primary: 180 100% 50%;
+    --sidebar-primary-foreground: 260 100% 10%;
+    --sidebar-accent: 330 100% 55%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 260 50% 20%;
+    --sidebar-ring: 330 100% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* font-family removed, will be handled by Tailwind config via layout.tsx */
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-headline;
+  }
+}
+
+/* Custom styles for Jackbox feel */
+@layer components {
+  .btn-jackbox {
+    @apply transition-all duration-150 ease-in-out hover:scale-105 active:scale-95;
+    text-shadow: 1px 1px 2px hsl(var(--background) / 0.5);
+  }
+  .card-jackbox {
+    @apply border-2 hover:shadow-[0_0_20px_hsl(var(--accent)/0.5),_0_0_10px_hsl(var(--primary)/0.3)];
+    transition: box-shadow 0.3s ease-in-out, border-color 0.3s ease-in-out;
+  }
+  .title-jackbox {
+    text-shadow: 
+      0 0 5px hsl(var(--primary)/0.7), 
+      0 0 10px hsl(var(--primary)/0.5), 
+      0 0 15px hsl(var(--accent)/0.3);
+  }
+  .kbd-jackbox {
+    @apply font-code text-xs font-semibold rounded border px-2 py-1;
+    @apply bg-foreground/10 text-foreground/80 border-foreground/30;
+    box-shadow: 1px 1px 0px hsl(var(--background)), 2px 2px 0px hsl(var(--border));
+  }
+}

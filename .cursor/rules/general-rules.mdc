@@ -1,0 +1,23 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+Address me as Bro.
+
+1. Context and State Management
+Always Synchronize with Key Files: Before starting any task, you must review TASKS.md and README.md to understand the current project state, goals, and architecture.
+
+Keep Documentation Current: After successfully implementing a feature or making a significant change, you must update TASKS.md to reflect the completion. If the change impacts 
+architecture, setup, or core functionality, you must also update README.md accordingly.
+
+
+2. Planning and Execution
+Plan Before Acting: For any multi-step task, first propose a clear, step-by-step plan. Explicitly state which files you intend to create or modify. Use sequential thinking MCP for this.
+
+One Task at a Time: Focus on completing a single, discrete task from TASKS.md. Do not start a new task until the current one is fully implemented, documented, and verified.
+Analyze Errors Thoroughly: When you encounter an error (linter, build, or runtime), do not just try a different approach. Announce the error, analyze its root cause, and explain your plan to fix it before proceeding.
+
+Make sure to add comments to the code for easy readability.
+
+Use context7 to read necessary documentation when in doubt. This makes sure you are using upto date information.

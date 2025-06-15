@@ -18,7 +18,8 @@ export default function HomePage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
-  const { initializeAbly } = useAbly();
+  const { initializeAbly } = useAbly()
+
 
   useEffect(() => {
     const signInAnonymously = async () => {
@@ -40,6 +41,8 @@ export default function HomePage() {
 
     signInAnonymously();
   }, [toast]);
+
+
 
   const ensureAuthenticated = async () => {
     if (isAuthenticated) return true;
@@ -68,6 +71,8 @@ export default function HomePage() {
     setIsAuthenticated(true);
     return true;
   };
+
+
 
   const handleCreateRoom = async () => {
     if (!(await ensureAuthenticated())) return;
@@ -126,6 +131,8 @@ export default function HomePage() {
       setIsCreatingRoom(false);
     }
   };
+
+
 
   const handleJoinRoom = async () => {
     if (!(await ensureAuthenticated())) return;
@@ -197,6 +204,8 @@ export default function HomePage() {
     }
   };
 
+
+  
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] py-12">
       <div className="text-center mb-8">

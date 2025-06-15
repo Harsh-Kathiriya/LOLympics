@@ -116,6 +116,8 @@ export interface RoomPresenceData {
   isReady?: boolean;      // Whether the player is ready to start the game
   lastActivity?: number;  // Timestamp of player's last activity
   avatarSrc?: string;     // URL to player's avatar
+  playerId?: string;      // Player's unique identifier (for PLAYER_JOINED events)
+  playerName?: string;    // Player's display name (for PLAYER_JOINED events)
 }
 
 /**
@@ -162,10 +164,10 @@ export interface UseRoomChannelResult {
  * Hook for managing a room-specific Ably channel
  * Provides real-time communication for a specific game room
  * 
- * @param roomId The ID of the room to connect to
+ * @param roomCode The CODE of the room to connect to (e.g., from URL params)
  * @returns An object with channel state and methods for interacting with the channel
  */
-export function useRoomChannel(roomId: string): UseRoomChannelResult {
+export function useRoomChannel(roomCode: string): UseRoomChannelResult {
   // Get the Ably client from context
   const { ably, isConnected } = useAbly();
   
@@ -178,12 +180,12 @@ export function useRoomChannel(roomId: string): UseRoomChannelResult {
 
   // Effect to initialize and clean up the channel
   useEffect(() => {
-    // Don't proceed if Ably client is not available or roomId is missing
-    if (!ably || !roomId) return;
+    // Don't proceed if Ably client is not available or roomCode is missing
+    if (!ably || !roomCode) return;
 
-    // Create a standardized channel name using the room ID
-    // This follows the pattern "room:{roomId}" for consistency
-    const channelName = `room:${roomId}`;
+    // Create a standardized channel name using the room CODE
+    // This follows the pattern "room:{roomCode}" for consistency
+    const channelName = `room:${roomCode}`;
     
     // Get the channel instance from Ably
     const roomChannel = ably.channels.get(channelName);
@@ -214,9 +216,32 @@ export function useRoomChannel(roomId: string): UseRoomChannelResult {
     // Set up presence listeners
     
     // When someone enters the channel
-    roomChannel.presence.subscribe('enter', (presenceMsg) => {
+    roomChannel.presence.subscribe('enter', async (presenceMsg) => {
       console.log('Presence enter:', presenceMsg);
       updatePresenceData();
+      
+      // 🚀 NEW: Publish PLAYER_JOINED event when someone enters
+      // Only publish if this isn't our own entry (to avoid self-notification)
+      if (presenceMsg.clientId !== ably.auth.clientId) {
+        try {
+          // Extract player info from presence data
+          const playerData = presenceMsg.data;
+          
+          // The presence data should include player info when they enter
+          // This requires updating the initial presence.enter() call to include player data
+          if (playerData?.playerId && playerData?.playerName) {
+            await roomChannel.publish(RoomEvent.PLAYER_JOINED, {
+              playerId: playerData.playerId,
+              playerName: playerData.playerName,
+              avatarSrc: playerData.avatarSrc || '/assets/avatars/eduardo.png'
+            });
+          } else {
+            console.warn('Incomplete player data in presence enter event:', playerData);
+          }
+        } catch (error) {
+          console.error('Error publishing PLAYER_JOINED event:', error);
+        }
+      }
     });
     
     // When someone leaves the channel
@@ -248,7 +273,7 @@ export function useRoomChannel(roomId: string): UseRoomChannelResult {
     setChannel(roomChannel);
     
     // Clean up function to run when the component unmounts
-    // or when roomId/ably changes
+    // or when roomCode/ably changes
     return () => {
       // Unsubscribe from presence events
       roomChannel.presence.unsubscribe();
@@ -262,35 +287,32 @@ export function useRoomChannel(roomId: string): UseRoomChannelResult {
       // Clear the channel from state
       setChannel(null);
     };
-  }, [ably, roomId]); // Re-run if ably client or roomId changes
+  }, [ably, roomCode]); // Re-run if ably client or roomCode changes
   
-  // Effect to enter the presence set when channel is ready
+
+  
+  // NOTE: We're no longer automatically entering presence when the channel is ready
+  // Instead, this should be explicitly done by the component using this hook (e.g., lobby page)
+  // This prevents duplicate presence entries and ensures we have complete player data first
+  
+  // Keep the cleanup logic to leave presence on unmount
   useEffect(() => {
     // Only proceed if we have a channel and it's properly attached
     if (channel && channelState === 'attached') {
-      const enterPresence = async () => {
-        try {
-          // Enter the presence set with initial data
-          await channel.presence.enter({
-            status: 'online',
-            isReady: false,
-            lastActivity: Date.now(),
-          });
-        } catch (err) {
-          console.error('Error entering presence:', err);
-        }
-      };
+      console.log(`Channel ${roomCode} is ready for presence updates`);
       
-      // Call the function to enter presence
-      enterPresence();
+      // We don't auto-enter presence anymore - the lobby page will do this
+      // after it has loaded player data
     }
     
-    // Clean up function to leave presence when unmounting
+    // Clean up function that will run when unmounting
     // or when channel/channelState changes
     return () => {
       if (channel) {
-        channel.presence.leave().catch(err => {
-          console.error('Error leaving presence:', err);
+        // Only try to leave if we're in the presence set
+        // For simplicity, we'll just attempt to leave without checking
+        channel.presence.leave().catch((leaveErr: Error) => {
+          console.error('Error leaving presence:', leaveErr);
         });
       }
     };

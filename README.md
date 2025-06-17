@@ -40,22 +40,32 @@ Caption Clash takes players through a series of fun and interactive stages:
         *   The game automatically starts when all players are ready.
         *   A countdown initiates the game start, and all players are transitioned to the first game phase simultaneously (state transition managed by Supabase and communicated via Ably).
 
-3.  **Meme Selection (`/room/[roomId]/meme-selection`)**
-    *   **Action:** A meme is chosen for the current round.
+3.  **Meme Proposal (`/room/[roomCode]/meme-selection`)**
+    *   **Action:** Each player finds and proposes one meme for the round.
     *   **Functionality:**
-        *   This phase involves either random meme selection or voting by all players to choose a meme from a pool (memes sourced from Supabase or an external API).
-        *   Players are shown a selection of memes (if applicable) or the chosen meme for the round.
-        *   A timer might be present for this phase.
-        *   The selected meme is broadcast to all players (via Ably, with the selected meme ID stored in Supabase for the round).
+        *   Players can search the Tenor API for GIFs or use the trending memes provided.
+        *   Each player selects one meme. This choice is recorded as a `meme_candidate` in the database via the `propose_meme` function.
+        *   A timer keeps the phase moving. If a player doesn't choose, a random meme is submitted for them when time expires.
+        *   Once the timer ends, all players are navigated to the voting page.
 
-4.  **Caption Entry (`/room/[roomId]/caption-entry`)**
+4.  **Meme Voting (`/room/[roomCode]/meme-voting`)**
+    *   **Action:** Players vote on the collection of proposed memes.
+    *   **Functionality:**
+        *   The page waits until all players have submitted their proposals, then displays all candidate memes.
+        *   Players cast one vote for their favorite meme (they cannot vote for their own). Votes are recorded via the `vote_for_meme_candidate` function.
+        *   Vote counts are updated and displayed to all players in real-time using Ably.
+        *   When the timer ends or all votes are cast, the `tally_votes_and_create_round` function is triggered. This function determines the winner, creates the official `round` in the database, and updates the room's status.
+        *   A `GAME_PHASE_CHANGED` event is broadcast via Ably, navigating all players simultaneously to the caption entry page.
+        *   Ties are broken randomly by the database function.
+
+5.  **Caption Entry (`/room/[roomId]/caption-entry`)**
     *   **Action:** Players submit their witty captions for the selected meme.
     *   **Functionality:**
         *   The chosen meme for the round is displayed prominently.
         *   Players have a text input field to write and submit their caption within a time limit.
         *   Submitted captions are sent to Supabase and associated with the player and the current round. Ably might be used to show progress (e.g., "X players have submitted").
 
-5.  **Caption Voting (`/room/[roomId]/caption-voting`)**
+6.  **Caption Voting (`/room/[roomCode]/caption-voting`)**
     *   **Action:** Players vote for the caption they find the funniest (they cannot vote for their own).
     *   **Functionality:**
         *   All submitted captions for the round are displayed anonymously (or attributed after voting).
@@ -63,18 +73,22 @@ Caption Clash takes players through a series of fun and interactive stages:
         *   Votes are recorded in Supabase. Real-time vote counts could be shown via Ably.
         *   A timer controls the voting period.
 
-6.  **Round Results (`/room/[roomId]/round-results`)**
+7.  **Round Results (`/room/[roomId]/round-results`)**
     *   **Action:** The winning caption for the round is revealed, and scores are updated.
     *   **Functionality:**
         *   The meme is displayed along with the winning caption and its author.
         *   Scores for the round are shown (e.g., points for the winning caption, points for votes on the winner).
         *   Overall scores or a leaderboard might be displayed (data from Supabase).
 
-7.  **Final Results (`/room/[roomId]/final-results`)**
+8.  **Final Results (`/room/[roomId]/final-results`)**
     *   **Action:** After a set number of rounds, the final game results and the ultimate Caption Clash champion are announced.
     *   **Functionality:**
         *   Displays final scores and rankings.
         *   Option to play again or return to the homepage.
+
+9.  **Round Loop / Game End**
+    *   After **Round Results** players are sent back to **Meme Proposal** to start the next round. This repeats until `rooms.current_round_number === rooms.total_rounds`.
+    *   Players can increase `total_rounds` from the settings dialog at any time while in the lobby (or between rounds). The change is persisted to the `rooms` table and broadcast to all players.
 
 ## Project Status
 
@@ -85,9 +99,15 @@ Caption Clash takes players through a series of fun and interactive stages:
     *   Ready state toggling
     *   Avatar customization and name changing
     *   Countdown to game start when all players are ready
-*   Real-time communication with Ably is properly set up and working for all lobby features.
+*   **Meme Proposal and Voting Flow is Implemented:**
+    *   Players can successfully search for and propose memes from the Tenor API.
+    *   The game correctly waits for all proposals before starting the voting phase.
+    *   Players can vote for their favorite meme.
+    *   Vote counts are displayed and updated in real-time.
+    *   The backend correctly determines a winning meme, creates a new round, and synchronizes all players to the next game phase.
+*   Real-time communication with Ably is properly set up and working for all lobby and meme-voting features.
 *   Core UI components for the game are created and styled.
-*   Game phases beyond the lobby (meme selection, captioning, voting, results) have placeholder UI but require full implementation with backend services.
+*   Game phases beyond meme voting (captioning, caption voting, results) have placeholder UI but require full implementation with backend services.
 
 ## Database Schema (Supabase)
 
@@ -95,12 +115,24 @@ The backend database is powered by Supabase. The schema is designed to manage ga
 
 ### Key Tables:
 
-1.  **`rooms`**: Stores information about game rooms, including the unique `room_code`, current `game_state` (JSONB for flexibility), `status` (lobby, in_progress, etc.), and `current_round_number`.
+1.  **`rooms`**: Stores information about game rooms, including the unique `room_code`, `total_rounds` (default **5**), `current_round_number`, `game_state` JSON and `status` (`lobby`, `in_progress`, `finished`).
 2.  **`players`**: Contains details for each player. The `players.id` is expected to match the `auth.uid()` derived from the JWT. Includes `room_id` (linking to the current room), `username`, `is_ready` status, `avatar_url` for player's chosen avatar, and `current_score`.
-3.  **`memes`**: A collection of memes available for the game, primarily storing `image_url`.
+3.  **`memes`**: A collection of memes available for the game, primarily storing `image_url` and `name`.
 4.  **`rounds`**: Tracks individual rounds within a game room, linking to the `room_id` and `meme_id` used for the round. Also stores the `winning_caption_id` once determined.
 5.  **`captions`**: Stores all captions submitted by players, linked to the `round_id` and `player_id`. Includes `text_content` for the caption.
-6.  **`votes`**: Records votes cast by players, linking to the `round_id`, the `caption_id` being voted for, and the `voter_player_id`.
+6.  **`meme_candidates`**: Holds the list of memes proposed for a round (`round_id`, `meme_id`, `submitted_by_player_id`).
+7.  **`meme_candidate_votes`**: Stores votes on the proposed memes (`meme_candidate_id`, `voter_player_id`).
+8.  **`votes`** *(caption votes)*: Records votes cast by players on captions, linking to the `caption_id` and `voter_player_id`.
+
+### Database Functions (RPCs)
+
+The game logic is orchestrated through several key PostgreSQL functions, which are called as RPCs from the client.
+
+*   `start_game(p_room_code)`: Called by clients when the lobby countdown ends. It's idempotent, checking the room status to ensure it only runs once. It transitions the room state to `meme-selection`.
+*   `propose_meme(p_room_id, p_round_number, p_meme_url, p_meme_name)`: Called by a player to submit a meme candidate for the current round.
+*   `vote_for_meme_candidate(p_meme_candidate_id)`: Called by a player to cast their vote for one of the proposed memes. Includes logic to prevent voting for one's own meme and voting multiple times.
+*   `tally_votes_and_create_round(p_room_id, p_round_number)`: Called by clients when the meme voting timer ends. It tallies the votes, selects a winning meme (randomly resolving ties), creates the official entry in the `rounds` table, and updates the room status to `caption-entry`.
+*   `get_meme_candidates_for_round(p_room_id, p_round_number)`: A helper function to fetch all proposed memes for a given round, along with the submitters' names.
 
 ### Authentication & Authorization (RLS):
 

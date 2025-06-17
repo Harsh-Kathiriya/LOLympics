@@ -36,9 +36,8 @@ export function MemeCard({
         <Image
           src={memeUrl}
           alt={altText}
-          layout="fill"
-          objectFit="cover"
-          className="transition-opacity duration-300 group-hover:opacity-80"
+          fill
+          className="object-cover transition-opacity duration-300 group-hover:opacity-80"
           data-ai-hint={dataAiHint}
         />
         {children && (

@@ -4,23 +4,32 @@ import { useState } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Send } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 
 interface CaptionInputProps {
+  /** Function to call when the user submits their caption. */
   onSubmit: (caption: string) => void;
+  /** The maximum allowed length for the caption. Defaults to 150. */
   maxLength?: number;
+  /** The URL of the meme image to be displayed above the input. */
   memeImageUrl: string;
+  /** If true, the input and button will be disabled, and a loader will be shown. */
+  isSubmitting?: boolean;
 }
 
-export function CaptionInput({ onSubmit, maxLength = 150, memeImageUrl }: CaptionInputProps) {
+/**
+ * A reusable form component for entering a caption for a meme.
+ * It includes the meme image, a text area for input, a character counter,
+ * and a submit button that shows a loading state.
+ */
+export function CaptionInput({ onSubmit, maxLength = 150, memeImageUrl, isSubmitting = false }: CaptionInputProps) {
   const [caption, setCaption] = useState('');
   const charsLeft = maxLength - caption.length;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (caption.trim()) {
+    if (caption.trim() && !isSubmitting) {
       onSubmit(caption.trim());
-      setCaption(''); // Clear after submit
     }
   };
 
@@ -41,13 +50,16 @@ export function CaptionInput({ onSubmit, maxLength = 150, memeImageUrl }: Captio
           maxLength={maxLength}
           className="min-h-[100px] text-base p-4 rounded-md shadow-sm focus:ring-accent focus:border-accent"
           aria-describedby="char-count"
+          readOnly={isSubmitting}
         />
         <div id="char-count" className="text-sm text-muted-foreground mt-2 text-right">
           {charsLeft} / {maxLength} characters remaining
         </div>
       </div>
-      <Button type="submit" size="lg" className="w-full font-bold text-lg bg-accent hover:bg-accent/90 text-accent-foreground" disabled={!caption.trim()}>
-        Submit Caption <Send className="ml-2 h-5 w-5" />
+      <Button type="submit" size="lg" className="w-full font-bold text-lg bg-accent hover:bg-accent/90 text-accent-foreground" disabled={!caption.trim() || isSubmitting}>
+        {isSubmitting && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
+        {isSubmitting ? 'Submitting...' : 'Submit Caption'}
+        {!isSubmitting && <Send className="ml-2 h-5 w-5" />}
       </Button>
     </form>
   );

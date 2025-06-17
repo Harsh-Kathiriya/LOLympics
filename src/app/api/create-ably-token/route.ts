@@ -45,7 +45,9 @@ export async function GET(request: NextRequest) {
     capability: {
       'room:*': ['subscribe', 'publish', 'presence', 'history'],
     },
-    ttl: 60 * 60 * 2 * 1000, // Token is valid for 2 hours
+    // CHANGE THIS: Reduce TTL from 2 hours to 1 hour. This is a more standard duration
+    // and encourages healthier re-authentication cycles that can prevent idle timeouts.
+    ttl: 60 * 60 * 1000, // Token is valid for 1 hour
   };
 
   try {
@@ -58,4 +60,4 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

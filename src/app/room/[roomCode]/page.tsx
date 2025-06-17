@@ -30,6 +30,7 @@ import {
   PlayerJoinedPayload,
   PlayerLeftPayload,
   PlayerReadyUpdatePayload,
+  PlayerNameUpdatePayload,
   GamePhaseChangedPayload,
   RoomPresenceData,
   PlayerAvatarChangedPayload
@@ -39,7 +40,7 @@ import {
 const AVATAR_BASE_PATH = '/assets/avatars/';
 const DEFAULT_AVATAR_FILE = 'eduardo.png';
 const DEFAULT_AVATAR_SRC = `${AVATAR_BASE_PATH}${DEFAULT_AVATAR_FILE}`;
-const MIN_PLAYERS_TO_START = 3; // Minimum players required to start the game
+const MIN_PLAYERS_TO_START = 1; // Minimum players required to start the game
 
 // Player data structure for lobby management
 type Player = {
@@ -60,6 +61,7 @@ export default function LobbyPage() {
   // Core state management
   const [players, setPlayers] = useState<Player[]>([]); // All players in the room
   const [isStartingGame, setIsStartingGame] = useState(false); // Game start animation state
+  const [startGamePromise, setStartGamePromise] = useState<Promise<any> | null>(null);
   const [roomId, setRoomId] = useState(''); // Internal room ID from database
   const [currentUser, setCurrentUser] = useState<Player | null>(null); // Current user's player data
   const [isLoading, setIsLoading] = useState(true); // Initial data loading state
@@ -95,6 +97,7 @@ export default function LobbyPage() {
         // We'll verify it's connected before using it
         if (!isAblyInitialized) {
           console.warn('Ably should have been initialized before reaching the lobby');
+          initializeAbly();
         }
 
         // Fetch room data and validate room exists
@@ -109,7 +112,12 @@ export default function LobbyPage() {
         // Load all players currently in the room
         const { data: playersData, error: playersError } = await supabase.from('players').select('id, username, is_ready, room_id, avatar_src').eq('room_id', roomData.id);
         if (playersError) {
-          toast({ title: "Error", description: `Fetching players: ${playersError.message}`, variant: "destructive" });
+          console.error('Error fetching players:', playersError);
+          toast({ 
+            title: "Error Fetching Players", 
+            description: `${playersError.message || 'Unknown error'}. Code: ${playersError.code || 'none'}`, 
+            variant: "destructive" 
+          });
           return;
         }
 
@@ -118,7 +126,7 @@ export default function LobbyPage() {
           id: player.id,
           name: player.username,
           avatarUrl: player.avatar_src || DEFAULT_AVATAR_SRC,
-          isReady: player.is_ready,
+          isReady: !!player.is_ready, // Ensure boolean
           isCurrentUser: player.id === session.user.id,
         }));
         setPlayers(transformedPlayers);
@@ -140,76 +148,87 @@ export default function LobbyPage() {
       initialPresenceSent.current = false;
     };
     fetchRoomInfo();
-  }, [roomCode, router]); // Only re-run when room code or router changes
+  }, [roomCode, router, isAblyInitialized, initializeAbly, toast]); // Added Ably dependencies
 
-  // Use room code for channel name, easier to debug and consistent with URL
-// This ensures all clients connect to the same channel regardless of internal DB ids
-const roomChannel = useRoomChannel(roomCode);
+  const roomChannel = useRoomChannel(roomCode);
 
   /**
-   * Initial presence setup
+   * Initial presence setup and join announcement.
    * 
    * Establishes player presence in the Ably channel when they join the room.
-   * This lets other players see them as online and enables PLAYER_JOINED events.
-   * We use enter() first time and then updatePresence() for subsequent updates.
+   * Crucially, after entering presence, it also PUBLISHES a `PLAYER_JOINED` event
+   * so that other clients, who are subscribed to this event, can update their UI.
    */
   useEffect(() => {
+    // This effect should only run once when the user and channel are ready.
     if (
-      roomChannel.isConnected &&
-      roomChannel.channel &&
+      roomChannel.isReady &&
       currentUser &&
-      !initialPresenceSent.current // Guard against duplicate presence entries
+      !initialPresenceSent.current // Guard against re-running
     ) {
-      console.log('Entering presence with complete player data');
-      
-      // Complete player data for presence and PLAYER_JOINED events
-      const completePresenceData: RoomPresenceData = {
-        status: 'online',
-        isReady: currentUser.isReady,
-        lastActivity: Date.now(),
-        avatarSrc: currentUser.avatarUrl,
-        // Add player identification data for PLAYER_JOINED events
-        playerId: currentUser.id,
-        playerName: currentUser.name,
-      };
-      
-      // Use enter() directly from the channel instead of updatePresence()
-      // This ensures we properly enter presence the first time
-      roomChannel.channel.presence.enter(completePresenceData)
-        .then(() => {
-          console.log('Successfully entered presence with player data');
-          initialPresenceSent.current = true;
-        })
-        .catch(error => {
-          console.error('Error entering presence:', error);
-          // Don't mark as sent if it fails, allowing retry on next render
-        });
+        const joinSequence = async () => {
+            // Prevent this from running again.
+            initialPresenceSent.current = true;
+            
+            // 1. Define the data for presence and the join event.
+            const presenceData: RoomPresenceData = {
+                status: 'online',
+                isReady: currentUser.isReady,
+                lastActivity: Date.now(),
+                avatarSrc: currentUser.avatarUrl,
+                playerId: currentUser.id,
+                playerName: currentUser.name,
+            };
+            const joinPayload: PlayerJoinedPayload = {
+                playerId: currentUser.id,
+                playerName: currentUser.name,
+                avatarSrc: currentUser.avatarUrl,
+            };
+
+            try {
+                // 2. Enter the presence set. This is for knowing "who is currently here".
+                await roomChannel.updatePresence(presenceData);
+                console.log('Successfully entered/updated presence.');
+
+                // 3. *** THE FIX ***
+                // Publish the PLAYER_JOINED event. This is the "knock on the door"
+                // that other clients are explicitly listening for to update their player list.
+                await roomChannel.publish<PlayerJoinedPayload>(RoomEvent.PLAYER_JOINED, joinPayload);
+                console.log('Successfully published PLAYER_JOINED event.');
+
+            } catch (error) {
+                console.error('Error during join sequence (presence/publish):', error);
+                // If it fails, allow it to be tried again on the next render.
+                initialPresenceSent.current = false;
+            }
+        };
+
+        joinSequence();
     }
-  }, [roomChannel.isConnected, roomChannel.channel, currentUser]);
+  }, [roomChannel.isReady, currentUser, roomChannel]); // Dependencies ensure this runs when ready.
 
   /**
    * Real-time event subscriptions
    * 
-   * Sets up Ably channel event listeners for:
-   * - Player joins/leaves
-   * - Ready status changes
-   * - Avatar changes
-   * - Game phase transitions
-   * 
-   * Each handler updates local state and provides user feedback.
-   * Unsubscribes when dependencies change to prevent memory leaks.
+   * Sets up Ably channel event listeners.
    */
   useEffect(() => {
-    // Only subscribe when channel is ready and we have user context
-    if (!roomChannel.isConnected || !roomChannel.channel || !currentUser?.id || !roomId) {
+    if (!roomChannel.isReady || !currentUser?.id || !roomId) {
       return;
     }
 
     // Handle new player joining the room
     const handlePlayerJoined = (data: PlayerJoinedPayload) => {
-      // Skip self-join events to avoid duplicates
-      if (data.playerId === currentUser.id) return;
+      // The guard below is crucial. Ably echoes messages back to the publisher by default.
+      // This prevents the joining user from adding themselves to the list twice.
+      if (data.playerId === currentUser.id) {
+        console.log("Ignoring self-join event.");
+        return;
+      }
 
+      toast({ title: "Player Joined", description: `${data.playerName} has joined the lobby.` });
+      
+      // Add the new player to the state only if they aren't already there.
       setPlayers(prev => prev.some(p => p.id === data.playerId) ? prev : [...prev, {
         id: data.playerId, 
         name: data.playerName,
@@ -217,7 +236,6 @@ const roomChannel = useRoomChannel(roomCode);
         isReady: false, 
         isCurrentUser: false
       }]);
-      toast({ title: "Player Joined", description: `${data.playerName} joined.` });
     };
 
     // Handle player leaving the room
@@ -228,23 +246,24 @@ const roomChannel = useRoomChannel(roomCode);
     // Handle ready status changes from any player
     const handlePlayerReadyUpdate = (data: PlayerReadyUpdatePayload) => {
       setPlayers(prev => prev.map(p => p.id === data.playerId ? { ...p, isReady: data.isReady } : p));
-      // Update current user state if the change applies to them
       if (currentUser.id === data.playerId) {
-        setCurrentUser(prevUser => (prevUser && prevUser.isReady !== data.isReady) ? { ...prevUser, isReady: data.isReady } : prevUser);
+        setCurrentUser(prevUser => prevUser ? { ...prevUser, isReady: data.isReady } : null);
       }
     };
 
     // Handle avatar changes from any player
     const handlePlayerAvatarChanged = (data: PlayerAvatarChangedPayload) => {
       setPlayers(prev => prev.map(p => p.id === data.playerId ? { ...p, avatarUrl: data.avatarSrc } : p));
-      // Update current user state if the change applies to them
       if (currentUser.id === data.playerId) {
-        setCurrentUser(prevUser => {
-          if (prevUser && prevUser.avatarUrl !== data.avatarSrc) {
-            return { ...prevUser, avatarUrl: data.avatarSrc };
-          }
-          return prevUser;
-        });
+        setCurrentUser(prevUser => prevUser ? { ...prevUser, avatarUrl: data.avatarSrc } : null);
+      }
+    };
+
+    // Handle name changes from any player
+    const handlePlayerNameChanged = (data: PlayerNameUpdatePayload) => {
+      setPlayers(prev => prev.map(p => p.id === data.playerId ? { ...p, name: data.newName } : p));
+      if (currentUser.id === data.playerId) {
+        setCurrentUser(prevUser => prevUser ? { ...prevUser, name: data.newName } : null);
       }
     };
 
@@ -259,6 +278,7 @@ const roomChannel = useRoomChannel(roomCode);
     const unsubReady = roomChannel.subscribe<PlayerReadyUpdatePayload>(RoomEvent.PLAYER_READY_UPDATE, handlePlayerReadyUpdate);
     const unsubPhase = roomChannel.subscribe<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, handleGamePhaseChanged);
     const unsubAvatar = roomChannel.subscribe<PlayerAvatarChangedPayload>(RoomEvent.PLAYER_AVATAR_CHANGED, handlePlayerAvatarChanged);
+    const unsubName = roomChannel.subscribe<PlayerNameUpdatePayload>(RoomEvent.PLAYER_NAME_UPDATE, handlePlayerNameChanged);
 
     // Cleanup subscriptions when dependencies change
     return () => {
@@ -267,30 +287,35 @@ const roomChannel = useRoomChannel(roomCode);
       unsubReady(); 
       unsubPhase(); 
       unsubAvatar();
+      unsubName();
     };
-  }, [roomChannel.isConnected, roomChannel.channel, currentUser?.id, roomId, router, toast]);
+  }, [roomChannel.isReady, currentUser?.id, roomId, router, roomCode, toast]); // Added roomCode to dependencies
 
   // Calculate if all players are ready for game start
   const allPlayersReady = players.length > 0 && players.every(p => p.isReady);
 
   /**
    * Automatic game start logic
-   * 
-   * Monitors when all players are ready and minimum player count is met.
-   * Triggers the countdown overlay and game start sequence.
    */
   useEffect(() => {
     if (allPlayersReady && players.length >= MIN_PLAYERS_TO_START && !isStartingGame) {
       toast({ title: "Everyone's Ready!", description: "Starting game..." });
+      
+      const startGame = async () => {
+        if (!roomCode) {
+          toast({ title: "Room code missing", variant: "destructive" });
+          return { error: new Error("Room code missing") };
+        }
+        return supabase.rpc('start_game', { p_room_code: roomCode });
+      };
+
+      setStartGamePromise(startGame());
       setIsStartingGame(true);
     }
-  }, [allPlayersReady, players.length, isStartingGame, toast]);
+  }, [allPlayersReady, players.length, isStartingGame, toast, roomCode]);
 
   /**
    * Handle player leaving the room
-   * 
-   * Removes player from database, publishes leave event to other players,
-   * and redirects to home page.
    */
   const handleLeaveRoom = useCallback(async () => {
     if (!roomId || !currentUser) return;
@@ -309,36 +334,24 @@ const roomChannel = useRoomChannel(roomCode);
 
   /**
    * Handle ready status toggle
-   * 
-   * Updates database, publishes event to other players, and updates presence.
-   * Only allows current user to toggle their own ready status.
    */
   const handleReadyToggle = useCallback(async (playerId: string, ready: boolean) => {
     if (!currentUser || playerId !== currentUser.id || !roomChannel.isConnected) return;
     try {
-      // Update database first
       await supabase.from('players').update({ is_ready: ready }).eq('id', playerId).throwOnError();
-
-      // Update local state immediately for responsive UI
       const updatedUser = { ...currentUser, isReady: ready };
       setCurrentUser(updatedUser);
       setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, isReady: ready } : p));
-
-      // Notify other players via Ably
       await roomChannel.publish<PlayerReadyUpdatePayload>(RoomEvent.PLAYER_READY_UPDATE, { playerId, isReady: ready });
-
-      // Update presence to reflect new ready status
       const presenceData: RoomPresenceData = {
           status: 'online',
           isReady: updatedUser.isReady,
           lastActivity: Date.now(),
           avatarSrc: updatedUser.avatarUrl,
-          // Include player data needed for PLAYER_JOINED events
           playerId: updatedUser.id,
           playerName: updatedUser.name
       };
       await roomChannel.updatePresence(presenceData);
-
     } catch (error: any) {
       console.error('Error updating ready status:', error);
       toast({ title: "Error", description: "Could not update ready status.", variant: "destructive" });
@@ -347,45 +360,29 @@ const roomChannel = useRoomChannel(roomCode);
 
   /**
    * Handle avatar change
-   * 
-   * Updates database, publishes event to other players, and updates presence.
-   * Includes duplicate prevention to avoid unnecessary updates.
    */
   const handleAvatarChange = useCallback(async (newAvatarFile: string) => {
     if (!currentUser || !roomChannel.isConnected) return;
     const newAvatarSrc = `${AVATAR_BASE_PATH}${newAvatarFile}`;
-
-    // Prevent unnecessary updates if avatar is already set
-    if (currentUser.avatarUrl === newAvatarSrc) {
-        return;
-    }
+    if (currentUser.avatarUrl === newAvatarSrc) return;
 
     try {
-      // Update database
       await supabase.from('players').update({ avatar_src: newAvatarSrc }).eq('id', currentUser.id).throwOnError();
-
-      // Update local state for immediate UI feedback
       const updatedUser = { ...currentUser, avatarUrl: newAvatarSrc };
       setCurrentUser(updatedUser);
       setPlayers(prevPlayers => prevPlayers.map(p => p.id === currentUser.id ? { ...p, avatarUrl: newAvatarSrc } : p));
-
-      // Notify other players
       await roomChannel.publish<PlayerAvatarChangedPayload>(RoomEvent.PLAYER_AVATAR_CHANGED, {
         playerId: currentUser.id, avatarSrc: newAvatarSrc
       });
-
-      // Update presence with new avatar
       const presenceData: RoomPresenceData = {
           status: 'online',
           isReady: updatedUser.isReady,
           lastActivity: Date.now(),
           avatarSrc: updatedUser.avatarUrl,
-          // Include player data needed for PLAYER_JOINED events
           playerId: updatedUser.id,
           playerName: updatedUser.name
       };
       await roomChannel.updatePresence(presenceData);
-
       toast({ title: "Profile Updated", description: "Your avatar has been changed." });
     } catch (error: any) {
       console.error('Error updating avatar:', error);
@@ -395,24 +392,17 @@ const roomChannel = useRoomChannel(roomCode);
 
   /**
    * Handle name change
-   * 
-   * Updates database and local state. Name changes are not currently
-   * broadcast via Ably events but could be extended for real-time updates.
    */
   const handleNameChange = useCallback(async (name: string) => {
     if (!currentUser || !roomChannel.isConnected) return;
-    if (currentUser.name === name) return; // Prevent unnecessary updates
+    if (currentUser.name === name) return;
 
     try {
       await supabase.from('players').update({ username: name }).eq('id', currentUser.id).throwOnError();
-      
       const updatedUser = { ...currentUser, name: name };
       setCurrentUser(updatedUser);
       setPlayers(prev => prev.map(p => p.id === currentUser.id ? { ...p, name: name } : p));
-
-      // Note: Name changes could be broadcast via Ably if real-time name updates are needed
-      // await roomChannel.publish(RoomEvent.PLAYER_NAME_CHANGED, { playerId: currentUser.id, newName: name });
-
+      await roomChannel.publish<PlayerNameUpdatePayload>(RoomEvent.PLAYER_NAME_UPDATE, { playerId: currentUser.id, newName: name });
       toast({ title: "Profile Updated", description: "Your name has been changed." });
     } catch (error: any) {
       console.error('Error updating name:', error);
@@ -422,27 +412,36 @@ const roomChannel = useRoomChannel(roomCode);
 
   /**
    * Handle countdown completion
-   * 
-   * Triggered when the game start countdown finishes.
-   * Publishes game phase change and navigates to meme selection.
    */
-  const handleCountdownEnd = useCallback(() => {
-    if (!roomId) {
-      toast({ title: "Navigation Error", variant: "destructive" });
+  const handleCountdownEnd = useCallback(async () => {
+    if (!startGamePromise) {
+      toast({ title: "Game start error", description: "An unexpected error occurred.", variant: "destructive" });
       setIsStartingGame(false);
       return;
     }
-    if (roomChannel.isConnected) {
-      roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: "meme-selection" })
-        .catch(error => console.error('Error publishing game phase change:', error));
+    
+    try {
+      const { error } = await startGamePromise;
+      if (error) {
+        console.error('Error starting game:', error);
+        toast({ title: "Error Starting Game", description: error.message, variant: "destructive" });
+        setIsStartingGame(false);
+        return;
+      }
+      
+      if (roomChannel.isConnected) {
+        await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'meme-selection' });
+      }
+      router.push(`/room/${roomCode}/meme-selection`);
+    } catch (e: any) {
+      console.error('Unexpected error during game start:', e);
+      toast({ title: "Error", description: e.message || 'Unexpected error', variant: 'destructive' });
+      setIsStartingGame(false);
     }
-    router.push(`/room/${roomCode}/meme-selection`);
-  }, [roomId, roomChannel, router, toast]);
+  }, [roomCode, roomChannel, router, toast, startGamePromise]);
 
   /**
    * Copy room code to clipboard
-   * 
-   * Allows players to easily share the room code with friends.
    */
   const copyRoomCode = useCallback(() => {
     if (roomCode) {
@@ -451,17 +450,14 @@ const roomChannel = useRoomChannel(roomCode);
     }
   }, [roomCode, toast]);
 
-  // Loading and error states
   if (isLoading) return <div className="text-center py-10 font-headline text-2xl text-primary">Loading room...</div>;
   if (!currentUser) return <div className="text-center py-10 font-headline text-2xl text-primary">Initializing player...</div>;
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4">
-      {/* Game start countdown overlay */}
       {isStartingGame && <CountdownOverlay duration={3} onCountdownEnd={handleCountdownEnd} />}
       
       <Card className="shadow-xl card-jackbox border-2 border-primary/50">
-        {/* Room header with code and copy functionality */}
         <CardHeader className="text-center border-b-2 border-border pb-6">
             <CardTitle className="font-headline text-4xl md:text-5xl text-primary title-jackbox">
                 Room Lobby
@@ -480,7 +476,6 @@ const roomChannel = useRoomChannel(roomCode);
         </CardHeader>
 
         <CardContent className="pt-6">
-          {/* Player count and avatar selector section */}
           <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
             <h3 className="font-headline text-2xl md:text-3xl flex items-center text-primary">
               <Users className="mr-3 h-7 w-7 md:h-8 md:w-8" /> Players ({players.length})
@@ -493,7 +488,6 @@ const roomChannel = useRoomChannel(roomCode);
             />
           </div>
           
-          {/* Player list with avatars and ready status */}
           <div className="space-y-4">
             {players.map(player => (
               <Card
@@ -509,6 +503,7 @@ const roomChannel = useRoomChannel(roomCode);
                   avatarUrl={player.avatarUrl}
                 />
                 <ReadyToggle
+                  key={`${player.id}-${player.isReady}`}
                   playerId={player.id}
                   isReady={player.isReady}
                   onToggle={(ready) => handleReadyToggle(player.id, ready)}
@@ -522,7 +517,6 @@ const roomChannel = useRoomChannel(roomCode);
           </div>
         </CardContent>
 
-        {/* Footer with leave room button */}
         <CardFooter className="flex justify-center items-center gap-4 pt-8 mt-4 border-t-2 border-border">
             <Button
                 variant="outline"

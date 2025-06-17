@@ -7,6 +7,7 @@ import React, {
   useState,
   ReactNode,
   useCallback,
+  useRef, // Import useRef
 } from 'react';
 import Ably from 'ably';
 
@@ -29,24 +30,17 @@ interface AblyProviderProps {
 }
 
 export const AblyProvider = ({ children }: AblyProviderProps) => {
-  const [ably, setAbly] = useState<Ably.Realtime | null>(null);
+  // Use a ref to hold the Ably instance. This ensures it's created only once
+  // and persists across re-renders without causing them.
+  const ablyRef = useRef<Ably.Realtime | null>(null);
+  
   const [isConnected, setIsConnected] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
-
-  // Clean up function to close Ably connection
-  const cleanupAbly = useCallback(() => {
-    if (ably) {
-      ably.connection.off();
-      ably.close();
-      setAbly(null);
-      setIsConnected(false);
-    }
-  }, [ably]);
 
   // Initialize Ably only when explicitly called
   const initializeAbly = useCallback(() => {
     // Don't initialize again if already done
-    if (hasInitialized) return;
+    if (hasInitialized || ablyRef.current) return;
     
     setHasInitialized(true);
     
@@ -69,18 +63,24 @@ export const AblyProvider = ({ children }: AblyProviderProps) => {
       console.error('Ably connection failed:', error);
     });
 
-    setAbly(ablyClient);
+    // Store the client in the ref
+    ablyRef.current = ablyClient;
   }, [hasInitialized]);
 
   // Clean up on unmount
   useEffect(() => {
+    // The function returned from useEffect will run when the component unmounts
     return () => {
-      cleanupAbly();
+      if (ablyRef.current) {
+        ablyRef.current.connection.off(); // Remove all listeners
+        ablyRef.current.close();
+        console.log('Ably connection closed on component unmount.');
+      }
     };
-  }, [cleanupAbly]);
+  }, []); // Empty dependency array ensures this runs only on mount and unmount
 
   return (
-    <AblyContext.Provider value={{ ably, isConnected, initializeAbly, hasInitialized }}>
+    <AblyContext.Provider value={{ ably: ablyRef.current, isConnected, initializeAbly, hasInitialized }}>
       {children}
     </AblyContext.Provider>
   );

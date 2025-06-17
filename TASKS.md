@@ -15,7 +15,9 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
         -   [X] `memes`: (id (PK), image_url, alt_text, source, created_at) - *Defined*
         -   [X] `rounds`: (id (PK), room_id (FK), round_number, meme_id (FK), winning_caption_id (FK), started_at, ended_at) - *Defined*
         -   [X] `captions`: (id (PK), round_id (FK), player_id (FK), text_content, created_at) - *Defined*
-        -   [X] `votes`: (id (PK), round_id (FK), caption_id (FK), voter_player_id (FK), created_at) - *Defined*
+        -   [X] `votes`: (caption votes) (id (PK), caption_id (FK), voter_player_id (FK), created_at) - *Renamed for clarity & Defined*
+        -   [X] `meme_candidates`: (id (PK), round_id (FK), meme_id (FK), submitted_by_player_id (FK), created_at) - *NEW & Defined*
+        -   [X] `meme_candidate_votes`: (id (PK), meme_candidate_id (FK), voter_player_id (FK), created_at) - *NEW & Defined*
     -   [X] Set up relationships (foreign keys) and constraints. - *Defined in SQL script*
     -   [X] Implement Row Level Security (RLS) policies for all tables to ensure data privacy and proper access control. - *Defined in SQL script, including helper functions. Linter warnings for helper functions addressed.*
 
@@ -35,9 +37,9 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
             -   [X] Allow players to change their avatar and name in the lobby.
             -   [X] Integrate with Supabase to save selected avatar.
 -   **[ ] Meme Data Management:**
-    -   [ ] Populate the `memes` table with initial memes (either manually, via a script, or by integrating an external API to fetch and store them).
-    -   [ ] Logic to fetch memes for the "Meme Selection" phase (e.g., random selection, selection by voting).
-    -   [ ] Store the `selected_meme_id` in the `game_rounds` table.
+    -   [ ] Populate the `memes` table with initial memes (or pull directly from Tenor).
+    -   [ ] Implement Supabase Function to create a `meme_candidate` row when a player submits a meme search result.
+    -   [ ] Implement Supabase Function to record a vote in `meme_candidate_votes` and, when voting ends, resolve the winning meme and update the `rounds.meme_id`.
 -   **[ ] Game Data Handling:**
     -   [ ] **Caption Submission:** Save submitted captions to the `captions` table, linked to the current `game_rounds` and `players`.
     -   [ ] **Vote Submission:** Save votes to the `votes` table, linked to `captions` and `players`.
@@ -98,22 +100,29 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
 
 (This section focuses on implementing the turn-based game flow, player interactions, and scoring, utilizing Supabase for data persistence & server-side logic, and Ably for real-time communication.)
 
--   **[ ] Centralized Game State Management:**
+-   **[~] Centralized Game State Management:** (Partially implemented)
     -   [ ] Design and implement a robust system for managing the overall game state (e.g., current phase, current round, selected meme, timers) primarily within Supabase (e.g., in the `rooms` or a dedicated `game_state` table).
-    -   [ ] Ensure Supabase Functions are the authority for transitioning game states.
-    -   [ ] Use Ably to broadcast game state changes to all clients, ensuring UI updates accordingly.
+    -   [X] Ensure Supabase Functions are the authority for transitioning game states.
+    -   [X] Use Ably to broadcast game state changes to all clients, ensuring UI updates accordingly.
 -   **[ ] Implement Full Game Flow (Phase by Phase):**
-    -   **[ ] Lobby (`/room/[roomId]/page.tsx`):
-        -   [ ] Integrate Supabase to fetch and display real players.
-        -   [ ] Integrate Ably for real-time player join/leave/ready status updates.
+    -   **[X] Lobby (`/room/[roomId]/page.tsx`):**
+        -   [X] Integrate Supabase to fetch and display real players.
+        -   [X] Integrate Ably for real-time player join/leave/ready status updates.
         -   [X] Allow players to customize their avatar and name.
-        -   [ ] Game starts automatically when all players are ready -> Triggers Supabase Function -> Ably broadcasts `game-starting` & then `game-phase-changed` to 'meme-selection'.
-    -   **[ ] Meme Selection (`/room/[roomId]/meme-selection/page.tsx`):
-        -   [ ] Fetch memes from Supabase (or external API via Supabase Function).
-        -   [ ] Implement logic for meme selection (e.g., voting system or random selection).
-        -   [ ] Selected meme ID is stored in Supabase (`game_rounds` table).
-        -   [ ] Ably broadcasts `meme-selected-for-round` and then `game-phase-changed` to 'caption-entry'.
-        -   [ ] Handle timer for this phase (server-authoritative if possible, with Ably broadcasting timer events or end-of-phase).
+        -   [X] Game starts automatically when all players are ready -> Triggers Supabase Function -> Ably broadcasts `game-starting` & then `game-phase-changed` to 'meme-selection'.
+    -   **[X] Meme Proposal (`/room/[roomId]/meme-selection/page.tsx`):**
+        -   [X] Fetch memes from Tenor API on the client-side.
+        -   [X] Implement logic for each player to propose one meme.
+        -   [X] Selected meme is submitted to Supabase (`meme_candidates` table) via `propose_meme` RPC.
+        -   [X] Handle timer for this phase; auto-submits a random meme if player doesn't choose.
+        -   [X] Navigate to voting page upon timer completion.
+    -   **[X] Meme Voting (`/room/[roomId]/meme-voting/page.tsx`):**
+        -   [X] Wait for all players to submit proposals before starting the vote.
+        -   [X] Fetch all proposed memes from Supabase using `get_meme_candidates_for_round` RPC.
+        -   [X] Allow players to vote for one meme (not their own) via `vote_for_meme_candidate` RPC.
+        -   [X] Broadcast vote counts in real-time using Ably.
+        -   [X] On timer end or all votes in, trigger `tally_votes_and_create_round` RPC.
+        -   [X] Synchronize all players to the next phase via Ably `GAME_PHASE_CHANGED` event.
     -   **[ ] Caption Entry (`/room/[roomId]/caption-entry/page.tsx` - *Create this page if not already robust*):
         -   [ ] Display the meme selected in the previous phase (data via Ably/Supabase).
         -   [ ] Allow players to type and submit captions.
@@ -210,4 +219,24 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
 -   **[ ] Cross-Browser & Cross-Device Testing:**
     -   [ ] Verify the application works consistently across major browsers (Chrome, Firefox, Safari, Edge) and different devices (desktop, tablet, mobile).
 -   **[ ] Performance Testing:**
-    -   [ ] Basic performance profiling to ensure smooth UI and acceptable load times, especially with real-time updates. 
+    -   [ ] Basic performance profiling to ensure smooth UI and acceptable load times, especially with real-time updates.
+
+### Task List
+
+- [X] Fix `start_game` function in `db_restore.sql`.
+- [X] Update lobby page to call `start_game` instead of `start_game_and_create_round`.
+- [X] Update `README.md` to reflect the changes in the database and game flow.
+- [ ] Implement the new meme selection, voting, and round creation flow.
+  - [ ] Create `meme-selection` page component.
+  - [ ] Create database function to handle meme submission (`propose_meme`).
+  - [ ] Create database function to handle meme voting (`vote_for_meme`).
+  - [ ] Create database function to tally votes and create a new round (`tally_meme_votes_and_create_round`).
+  - [ ] Update frontend to navigate through the new flow.
+- [X] Implement backend logic for meme selection and voting.
+  - [X] Create database function to handle meme submission (`propose_meme`).
+  - [X] Create database function to handle meme voting (`vote_for_meme_candidate`).
+  - [X] Create database function to tally votes and create a new round (`tally_votes_and_create_round`).
+- [X] Implement frontend for the new meme selection, voting, and round creation flow.
+  - [X] Implement `meme-selection` page component logic.
+  - [X] Connect `meme-selection` page to the new database functions.
+  - [X] Ensure smooth, real-time transitions between proposing, voting, and captioning phases. 

@@ -28,7 +28,7 @@ export enum RoomEvent {
   ROUND_RESULTS_READY = 'round-results-ready',
   FINAL_RESULTS = 'final-results',
   PLAYER_AVATAR_CHANGED = 'player-avatar-changed',
-  MEME_VOTE_CAST = 'meme-vote-cast',
+  MEME_VOTE_CAST = 'meme-vote-cast', // This event will now signal WHO voted.
   
 }
 
@@ -39,7 +39,8 @@ export interface PlayerReadyUpdatePayload { playerId: string; isReady: boolean; 
 export interface PlayerNameUpdatePayload { playerId: string; newName: string; }
 export interface GamePhaseChangedPayload { phase: string; data?: Record<string, any>; }
 export interface PlayerAvatarChangedPayload { playerId: string; avatarSrc: string; }
-export interface MemeVoteCastPayload { memeCandidateId: string; }
+// CHANGED: The payload now clearly indicates who voted.
+export interface MemeVoteCastPayload { voterPlayerId: string; votedForCandidateId: string; }
 
 // --- Other Interfaces ---
 /** Data stored in Ably's presence set for each player. */
@@ -59,7 +60,7 @@ export interface UseRoomChannelResult {
   /** A robust function to publish an event, ensuring the channel is attached first. */
   publish: <T extends RoomEventPayload>(eventName: RoomEvent, data: T) => Promise<void>; 
   /** A function to subscribe to an event, returning a cleanup function to unsubscribe. */
-  subscribe: <T extends RoomEventPayload>( eventName: RoomEvent, callback: (data: T) => void ) => () => void; 
+  subscribe: <T extends RoomEventPayload>( eventName: RoomEvent, callback: (data: T, message: Ably.Message) => void ) => () => void; 
   /** A function to update the current user's presence data. */
   updatePresence: (data: RoomPresenceData) => Promise<void>; 
 }
@@ -191,9 +192,9 @@ export function useRoomChannel(roomCode: string): UseRoomChannelResult {
    * Subscribes a callback to a specific event on the channel.
    * Returns a cleanup function to unsubscribe, which is perfect for use in `useEffect`.
    */
-  const subscribe = useCallback(<T extends RoomEventPayload>(eventName: RoomEvent, callback: (data: T) => void): (() => void) => {
+  const subscribe = useCallback(<T extends RoomEventPayload>(eventName: RoomEvent, callback: (data: T, message: Ably.Message) => void): (() => void) => {
     if (!channel) return () => {};
-    const handler = (message: Ably.Message) => callback(message.data as T);
+    const handler = (message: Ably.Message) => callback(message.data as T, message);
     channel.subscribe(eventName, handler);
     // Return the cleanup function.
     return () => channel.unsubscribe(eventName, handler);

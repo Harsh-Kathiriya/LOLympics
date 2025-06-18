@@ -542,61 +542,72 @@ COMMENT ON FUNCTION public.submit_caption_vote(UUID) IS 'Allows an authenticated
 -- Function to tally caption votes, award points, and finalize the round
 DROP FUNCTION IF EXISTS public.tally_caption_votes_and_finalize_round(p_round_id UUID);
 CREATE OR REPLACE FUNCTION public.tally_caption_votes_and_finalize_round(p_round_id UUID)
-RETURNS void
+RETURNS boolean
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
     v_room_id UUID;
     v_is_finalized BOOLEAN;
+    v_player_count INT;
+    v_vote_count INT;
     v_featured_winning_caption_id UUID;
+    v_max_votes INT;
+    v_points_to_add INT;
 BEGIN
     -- 1. Lock the round to prevent race conditions. This is essential.
     SELECT room_id, (winning_caption_id IS NOT NULL) INTO v_room_id, v_is_finalized
     FROM public.rounds
     WHERE id = p_round_id
     FOR UPDATE;
-
+ 
     -- Exit if another transaction just finished this work.
     IF v_is_finalized THEN
-        RETURN;
+        RETURN true;
+    END IF;
+ 
+    -- NEW: Server-side guard against premature tallying.
+    -- Get the number of players in the room for an accurate check.
+    SELECT count(*) INTO v_player_count
+    FROM public.players p
+    WHERE p.room_id = v_room_id;
+
+    -- Get the actual number of votes committed to the database.
+    SELECT count(*) INTO v_vote_count
+    FROM public.votes v
+    WHERE v.round_id = p_round_id;
+
+    -- If the number of votes in the DB is less than the players, it's too early.
+    -- The client check fired too soon. Abort and let another client try later.
+    IF v_vote_count < v_player_count THEN
+        RETURN false;
     END IF;
 
-    -- 2. Use a single, comprehensive query with CTEs to update player scores.
-    -- This is a stateless approach that prevents issues from one round affecting the next.
-    WITH vote_counts AS (
-        -- Count votes for each caption in the round
-        SELECT
-            c.id AS caption_id,
-            c.player_id,
-            COUNT(v.id) AS votes
-        FROM public.captions c
-        LEFT JOIN public.votes v ON c.id = v.caption_id AND v.round_id = c.round_id
-        WHERE c.round_id = p_round_id
-        GROUP BY c.id, c.player_id
-    ),
-    max_votes_cte AS (
-        -- Find the highest vote count. Use GREATEST to ensure it's at least 0.
-        SELECT GREATEST(MAX(votes), 0) AS max_v FROM vote_counts
-    ),
-    winners AS (
-        -- Identify all players who achieved the max vote count, but only if votes > 0
-        SELECT player_id
-        FROM vote_counts
-        WHERE votes = (SELECT max_v FROM max_votes_cte) AND (SELECT max_v FROM max_votes_cte) > 0
-    ),
-    points AS (
-        -- Calculate points per winner. If no winners (no votes > 0), this will be 0.
-        SELECT
-            CASE
-                WHEN (SELECT COUNT(*) FROM winners) > 0
-                THEN floor(100 / (SELECT COUNT(*) FROM winners))
-                ELSE 0
-            END AS points_to_add
-    )
-    UPDATE public.players p
-    SET current_score = p.current_score + (SELECT points_to_add FROM points)
-    WHERE p.id IN (SELECT player_id FROM winners);
-
+    -- 2. Tally votes and award points using a clearer, procedural approach.
+    -- This logic now perfectly mirrors the `get_round_results_details` function.
+    SELECT COALESCE(MAX(votes), 0) INTO v_max_votes
+    FROM (
+        SELECT COUNT(id) as votes FROM public.votes WHERE round_id = p_round_id GROUP BY caption_id
+    ) as vote_counts;
+ 
+    -- Only award points if there was at least one vote cast for a winner.
+    IF v_max_votes > 0 THEN
+        -- Calculate points per winner by splitting 100 points among all winners.
+        v_points_to_add := floor(100 / (
+            SELECT COUNT(*) FROM (
+                SELECT 1 FROM public.votes WHERE round_id = p_round_id GROUP BY caption_id HAVING COUNT(id) = v_max_votes
+            ) as winners
+        ));
+ 
+        -- Update the score for all players who authored a winning caption.
+        UPDATE public.players
+        SET current_score = current_score + v_points_to_add
+        WHERE id IN (
+            SELECT player_id FROM public.captions WHERE id IN (
+                SELECT caption_id FROM public.votes WHERE round_id = p_round_id GROUP BY caption_id HAVING COUNT(id) = v_max_votes
+            )
+        );
+    END IF;
+ 
     -- 3. Select a "featured" winning caption for the UI.
     -- This is done separately and after the scoring to keep logic clean.
     -- It prioritizes an actual winner, but falls back to a random caption if there's a 0-0 tie.
@@ -616,63 +627,65 @@ BEGIN
     UPDATE public.rooms
     SET status = 'round-results'
     WHERE id = v_room_id;
+    
+    RETURN true;
 END;
 $$;
-COMMENT ON FUNCTION public.tally_caption_votes_and_finalize_round(UUID) IS 'Calculates winning caption and awards points. Uses a stateless CTE approach to handle ties correctly and locking to prevent race conditions.';
+COMMENT ON FUNCTION public.tally_caption_votes_and_finalize_round(UUID) IS 'Calculates winning caption and awards points. Now includes a server-side check to ensure all votes are cast before tallying to prevent race conditions. Returns true if finalized.';
+
 -- Function to get all details for the round results page in one call
 DROP FUNCTION IF EXISTS public.get_round_results_details(p_round_id UUID);
 CREATE OR REPLACE FUNCTION public.get_round_results_details(p_round_id UUID)
 RETURNS jsonb
-LANGUAGE plpgsql
-STABLE
-SECURITY DEFINER
-SET search_path = ''
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = ''
 AS $$
 DECLARE
     v_results jsonb;
     v_max_votes INT;
-    v_winner_count INT;
-    v_points_per_winner INT;
+    v_points_per_winner INT := 0;
 BEGIN
-    -- Determine points awarded in this round
+    -- Determine the maximum number of votes any single caption received.
     SELECT COALESCE(MAX(votes), 0) INTO v_max_votes
     FROM (
-        SELECT COUNT(id) as votes
-        FROM public.votes v
-        WHERE v.round_id = p_round_id
-        GROUP BY v.caption_id
+        SELECT COUNT(id) as votes FROM public.votes v WHERE v.round_id = p_round_id GROUP BY v.caption_id
     ) as vote_counts;
 
+    -- If there was at least one vote, calculate points
     IF v_max_votes > 0 THEN
-        SELECT COUNT(*) INTO v_winner_count
-        FROM (
-            SELECT 1
-            FROM public.votes v
-            WHERE v.round_id = p_round_id
-            GROUP BY v.caption_id
-            HAVING COUNT(id) = v_max_votes
-        ) as winners;
-        v_points_per_winner := floor(100 / v_winner_count);
-    ELSE
-        v_points_per_winner := 0;
+        v_points_per_winner := floor(100 / (
+            SELECT COUNT(*) FROM (
+                SELECT 1 FROM public.votes v WHERE v.round_id = p_round_id GROUP BY v.caption_id HAVING COUNT(id) = v_max_votes
+            ) as winners
+        ));
     END IF;
 
-    -- Aggregate all data into a single JSONB object
+    -- Aggregate all data into a single JSONB object for the client.
     SELECT jsonb_build_object(
         'memeUrl', m.image_url,
         'currentRound', r.round_number,
         'totalRounds', rm.total_rounds,
-        'winningCaption', (
-            SELECT jsonb_build_object(
-                'id', wc.id,
-                'text', wc.text_content,
-                'authorId', wc.player_id,
-                'authorName', p.username,
-                'pointsAwarded', v_points_per_winner -- Use calculated points
+        'pointsAwarded', v_points_per_winner,
+        'winningCaptions', ( -- Changed from winningCaption to winningCaptions (array)
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', wc.id,
+                    'text', wc.text_content,
+                    'authorId', wc.player_id,
+                    'authorName', p.username,
+                    'avatarUrl', p.avatar_src
+                )
             )
             FROM public.captions wc
             JOIN public.players p ON wc.player_id = p.id
-            WHERE wc.id = r.winning_caption_id
+            WHERE wc.round_id = p_round_id AND wc.id IN (
+                -- Select all captions that have the max number of votes
+                SELECT caption_id FROM (
+                    SELECT caption_id, COUNT(id) as vote_count
+                    FROM public.votes v WHERE v.round_id = p_round_id
+                    GROUP BY caption_id
+                    HAVING COUNT(id) = v_max_votes
+                ) as winning_ids
+            )
         ),
         'players', (
             SELECT jsonb_agg(
@@ -683,8 +696,7 @@ BEGIN
                     'avatarUrl', pl.avatar_src
                 ) ORDER BY pl.current_score DESC
             )
-            FROM public.players pl
-            WHERE pl.room_id = r.room_id
+            FROM public.players pl WHERE pl.room_id = r.room_id
         )
     )
     INTO v_results
@@ -696,7 +708,7 @@ BEGIN
     RETURN v_results;
 END;
 $$;
-COMMENT ON FUNCTION public.get_round_results_details(UUID) IS 'Fetches all necessary data for the round results page, including the winning meme, caption, author, points awarded, and current leaderboard.';
+COMMENT ON FUNCTION public.get_round_results_details(UUID) IS 'Fetches all necessary data for the round results page, including all winning captions for tie-breaking UI.';
 
 -- Function to advance the game to the next round
 DROP FUNCTION IF EXISTS public.advance_to_next_round(p_room_id UUID);

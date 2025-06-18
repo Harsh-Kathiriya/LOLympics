@@ -1,4 +1,28 @@
-// FILE: /Users/harshkathiriya/Downloads/captionking-master/src/app/room/[roomCode]/round-results/page.tsx
+/**
+ * RoundResultsPage Component
+ *
+ * This component displays the results of a completed round. It shows the meme,
+ * the winning caption(s), points awarded, and an updated leaderboard.
+ *
+ * Core Logic:
+ * 1.  Initialization & Polling:
+ *     - On mount, it shows a loader and starts polling the `get_round_results_details`
+ *       Supabase RPC. This is because it might take a moment for the server to
+ *       finalize the results after the voting phase ends.
+ *     - Polling stops once the results are successfully fetched.
+ * 2.  Display Results:
+ *     - Renders the meme image.
+ *     - A helper function `renderWinnerInfo` displays the winner. It has special
+ *       UI for ties, showing all winning captions and authors.
+ *     - Shows a `LeaderboardSnippet` with updated player scores.
+ * 3.  Automatic Advancement:
+ *     - A 12-second timer is initiated. When it completes, the game automatically
+ *       proceeds to the next phase, ensuring the game keeps a good pace.
+ * 4.  Real-time Updates (Ably):
+ *     - Listens for the 'game-phase-changed' event (triggered by one of the clients
+ *       when the timer ends) to navigate all players simultaneously to the next
+ *       stage (either 'meme-selection' or 'final-results').
+ */
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -6,21 +30,24 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LeaderboardSnippet } from '@/components/game/leaderboard-snippet';
-import { Award, ArrowRightCircle, Loader2 } from 'lucide-react';
+import { PlayerAvatar } from '@/components/game/player-avatar';
+import { Award, ArrowRightCircle, Loader2, Users } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
 
-// Updated type to include tie information
+type WinningCaption = {
+  id: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  avatarUrl?: string;
+};
+
 type RoundResult = {
   memeUrl: string;
-  winningCaption: {
-    id: string;
-    text: string;
-    authorId: string;
-    authorName: string;
-    pointsAwarded: number;
-  };
+  winningCaptions: WinningCaption[] | null;
+  pointsAwarded: number;
   players: {
     id: string;
     name: string;
@@ -29,8 +56,6 @@ type RoundResult = {
   }[];
   currentRound: number;
   totalRounds: number;
-  winnerCount: number; // How many players tied for the win
-  winnerNames: string[] | null; // List of all winners' names, can be null
 };
 
 export default function RoundResultsPage() {
@@ -39,12 +64,15 @@ export default function RoundResultsPage() {
   const router = useRouter();
   const { toast } = useToast();
   
+  // State to manage the loading screen while results are being tallied.
   const [isLoading, setIsLoading] = useState(true);
   const [results, setResults] = useState<RoundResult | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState<string | null>(null);
+  // Ref to prevent navigation logic from firing multiple times.
   const isNavigating = useRef(false);
   
+  // Establishes a real-time connection to the room's channel via Ably.
   const roomChannel = useRoomChannel(roomCode);
 
   useEffect(() => {
@@ -56,28 +84,18 @@ export default function RoundResultsPage() {
   }, []);
 
   useEffect(() => {
-    // This function is now inside the effect to avoid useCallback dependencies.
+    // This effect fetches the results. It polls because there might be a slight delay
+    // between this page loading and the server finalizing the previous round's results.
     const fetchRoundResults = async () => {
       try {
-        // Step 1: Get room and current round IDs
         const { data: roomData, error: roomError } = await supabase.from('rooms').select('id, current_round_number').eq('room_code', roomCode).single();
         if (roomError || !roomData) throw new Error("Could not find room");
         if (!roomId) setRoomId(roomData.id);
         
-        const { data: roundData, error: roundError } = await supabase.from('rounds').select('id, winning_caption_id').eq('room_id', roomData.id).eq('round_number', roomData.current_round_number).single();
-        if (roundError) throw new Error("Could not find current round data.");
-        
-        // If winner isn't set, server is still tallying. We'll retry.
-        if (!roundData || !roundData.winning_caption_id) {
-          throw new Error("Winner not yet determined. Retrying...");
-        }
+        const { data: roundData, error: roundError } = await supabase.from('rounds').select('id').eq('room_id', roomData.id).eq('round_number', roomData.current_round_number).single();
+        if (roundError || !roundData) throw new Error("Could not find current round data.");
 
-        // Step 2: Call the new single RPC to get all details
-        const { data: resultsData, error: resultsError } = await supabase.rpc(
-          'get_round_results_details',
-          { p_round_id: roundData.id }
-        );
-
+        const { data: resultsData, error: resultsError } = await supabase.rpc('get_round_results_details', { p_round_id: roundData.id });
         if (resultsError) throw resultsError;
         if (!resultsData) throw new Error("Failed to load round result details.");
         
@@ -85,27 +103,30 @@ export default function RoundResultsPage() {
         setIsLoading(false);
 
       } catch (error: any) {
-         // This is not a fatal error, just a temporary state, so no destructive toast.
         console.log(error.message);
       }
     };
     
-    // Set up a polling interval that stops once data is loaded.
+    // Start polling immediately if results are still loading.
     if (isLoading) {
-      fetchRoundResults(); // Initial call
+      fetchRoundResults();
       const intervalId = setInterval(fetchRoundResults, 2000);
+      // Stop polling once results are loaded.
       return () => clearInterval(intervalId);
     }
   }, [isLoading, roomCode, roomId]);
 
+  // Advances the game to the next round or to the final results.
   const handleNext = useCallback(async () => {
     if (isNavigating.current || !results || !roomId) return;
     isNavigating.current = true;
     
     try {
+      // Call the server function to update the room state.
       await supabase.rpc('advance_to_next_round', { p_room_id: roomId });
-      
+      // Determine the next phase based on the current round number.
       const nextPhase = results.currentRound < results.totalRounds ? 'meme-selection' : 'final-results';
+      // Notify all clients to navigate to the next phase.
       await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: nextPhase });
     } catch (error: any) {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -114,99 +135,88 @@ export default function RoundResultsPage() {
   }, [results, roomId, roomChannel, toast]);
 
   useEffect(() => {
+    // Automatically trigger the 'next' action after a delay to keep the game moving.
     if (isLoading || !results) return;
-    
-    const timer = setTimeout(() => handleNext(), 12000); // Increased to 12s to allow reading names
+    const timer = setTimeout(() => handleNext(), 12000);
     return () => clearTimeout(timer);
   }, [isLoading, results, handleNext]);
   
   useEffect(() => {
+    // Subscribes to the 'game-phase-changed' event to handle navigation.
     if (!roomChannel.isReady) return;
-    
     const handlePhaseChange = (data: GamePhaseChangedPayload) => {
       if (data.phase === 'meme-selection') router.push(`/room/${roomCode}/meme-selection`);
       else if (data.phase === 'final-results') router.push(`/room/${roomCode}/final-results`);
     };
-    
     const unsubPhase = roomChannel.subscribe<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, handlePhaseChange);
     return () => unsubPhase();
   }, [roomChannel.isReady, roomCode, router]);
 
+  // Renders the information about the winner(s) of the round.
   const renderWinnerInfo = () => {
-    if (!results || !results.winningCaption) return null;
-
-    const { winningCaption, winnerCount, winnerNames } = results;
-
-    // Case 1: No votes were cast at all.
-    if (winnerCount === 0) {
+    if (!results || !results.winningCaptions || results.winningCaptions.length === 0) {
       return (
          <div className="absolute inset-x-0 bottom-0 bg-black/80 p-4 text-center">
-            <p className="text-xl font-semibold text-white leading-tight">No votes this round!</p>
+            <p className="text-xl font-semibold text-white">No votes this round!</p>
             <p className="text-md text-muted-foreground mt-2">No points awarded.</p>
         </div>
       );
     }
     
-    // Case 2: A single, clear winner.
-    if (winnerCount === 1) {
+    const { winningCaptions, pointsAwarded } = results;
+
+    // UI for a single winner.
+    if (winningCaptions.length === 1) {
+      const winner = winningCaptions[0];
       return (
-        <div className="absolute inset-x-0 bottom-0 bg-black/80 p-4 text-center">
-            <p className="text-2xl font-semibold text-white leading-tight">"{winningCaption.text}"</p>
-            <p className="text-md text-accent mt-2">by {winningCaption.authorName} (+{winningCaption.pointsAwarded} points)</p>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 pt-12 text-center">
+            <p className="text-3xl font-bold text-white leading-tight drop-shadow-lg">"{winner.text}"</p>
+            <p className="text-lg text-accent mt-3 font-semibold">by {winner.authorName} (+{pointsAwarded} points)</p>
         </div>
       );
     }
 
-    // Case 3: A tie between multiple players.
-    const otherWinners = winnerNames?.filter(name => name !== winningCaption.authorName) || [];
-    const andOthersText = otherWinners.length > 0 ? ` & ${otherWinners.join(', ')}` : '';
-    
+    // Special UI to handle ties, listing all winners.
     return (
-        <div className="absolute inset-x-0 bottom-0 bg-black/80 p-4 text-center">
-            <p className="text-sm text-yellow-400 font-bold">A TIE BETWEEN {winnerCount} PLAYERS!</p>
-            <p className="text-2xl font-semibold text-white leading-tight mt-1">"{winningCaption.text}"</p>
-            <p className="text-md text-accent mt-2">
-                One of the winning captions by {winningCaption.authorName}.
-            </p>
-            <p className="text-sm text-accent">
-                All winners get +{winningCaption.pointsAwarded} points!
-            </p>
+      <div className="absolute inset-0 bg-black/80 p-4 flex flex-col justify-center items-center text-center">
+        <h3 className="font-headline text-3xl text-yellow-400 font-bold tracking-wider animate-pulse">
+          IT'S A TIE!
+        </h3>
+        <p className="text-muted-foreground mb-4">{winningCaptions.length} players share the victory!</p>
+        <div className="flex flex-wrap justify-center gap-4">
+          {winningCaptions.map(winner => (
+            <div key={winner.id} className="bg-black/50 p-3 rounded-lg max-w-xs">
+              <PlayerAvatar name={winner.authorName} avatarUrl={winner.avatarUrl} size="sm" />
+              <p className="text-white text-lg mt-2">"{winner.text}"</p>
+            </div>
+          ))}
         </div>
+        <p className="text-accent font-semibold mt-4 text-lg">
+          All winners get +{pointsAwarded} points!
+        </p>
+      </div>
     );
   };
 
   if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <Loader2 className="h-16 w-16 text-primary animate-spin mb-4" />
-        <h1 className="font-headline text-3xl text-primary">Revealing the Winner...</h1>
-      </div>
-    );
+    return <div className="flex flex-col items-center justify-center min-h-screen"><Loader2 className="h-16 w-16 text-primary animate-spin mb-4" /><h1 className="font-headline text-3xl text-primary">Revealing the Winner...</h1></div>;
   }
-
   if (!results) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
-        <h1 className="font-headline text-3xl text-destructive">Error Loading Results</h1>
-        <p className="text-muted-foreground mt-2">Could not load round results. Please try refreshing.</p>
-        <Button className="mt-4" onClick={() => window.location.reload()}>Refresh</Button>
-      </div>
-    );
+    return <div className="flex flex-col items-center justify-center min-h-screen"><h1 className="font-headline text-3xl text-destructive">Error Loading Results</h1><Button className="mt-4" onClick={() => window.location.reload()}>Refresh</Button></div>;
   }
-
 
   return (
     <div className="max-w-4xl mx-auto py-8">
       <Card className="shadow-xl overflow-hidden card-jackbox border-2 border-primary/70">
-        <CardHeader className="text-center bg-gradient-to-b from-accent/30 to-transparent pb-8">
-          <CardTitle className="font-headline text-5xl text-accent flex items-center justify-center title-jackbox">
+        <CardHeader className="text-center bg-gradient-to-b from-primary/20 to-transparent pb-8">
+          <CardTitle className="font-headline text-5xl text-primary flex items-center justify-center title-jackbox">
             <Award className="mr-3 h-12 w-12" /> Round {results.currentRound} Results!
           </CardTitle>
           <CardDescription className="text-lg">The votes are in!</CardDescription>
         </CardHeader>
         <CardContent className="p-6 space-y-8">
-          <Card className="relative shadow-lg border-2 border-accent overflow-hidden">
-            <img src={results.memeUrl} alt="Winning meme" className="w-full max-h-[400px] object-contain bg-black" />
+          <Card className="relative shadow-lg border-2 border-accent overflow-hidden min-h-[300px]">
+            <img src={results.memeUrl} alt="Winning meme" className="w-full h-full object-cover" />
             {renderWinnerInfo()}
           </Card>
           <LeaderboardSnippet players={results.players} currentPlayerId={currentUserId || undefined} />

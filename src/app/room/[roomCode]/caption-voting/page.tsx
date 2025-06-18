@@ -1,4 +1,25 @@
-// FILE: /Users/harshkathiriya/Downloads/captionking-master/src/app/room/[roomCode]/caption-voting/page.tsx
+/**
+ * CaptionVotingPage Component
+ *
+ * This component manages the caption voting phase of the game. It displays the
+ * round's meme and the captions submitted by players. Players vote for their
+ * favorite caption within a time limit.
+ *
+ * Core Logic:
+ * 1.  Initialization: Fetches room, player, and current round data.
+ * 2.  Waiting Phase: Polls the database until all players have submitted captions.
+ * 3.  Voting Phase:
+ *     - Displays the meme and all submitted captions.
+ *     - Players can select a caption and confirm their vote.
+ *     - Own captions are disabled.
+ * 4.  Real-time Updates (Ably):
+ *     - Listens for votes from other players to update the vote count UI.
+ *     - Listens for a 'game-phase-changed' event to navigate to the results page.
+ * 5.  Round Finalization:
+ *     - A timer or all players voting triggers the tallying of votes.
+ *     - Calls a Supabase RPC to finalize the round, which in turn triggers the
+ *       'game-phase-changed' event for all clients.
+ */
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -14,7 +35,6 @@ import { useRoomChannel, RoomEvent, GamePhaseChangedPayload, CaptionVoteCastPayl
 import { Player } from '@/types/player';
 import Ably from 'ably';
 
-// Define the structure of a caption with its metadata
 type Caption = {
   id: string;
   text_content: string;
@@ -28,26 +48,29 @@ export default function CaptionVotingPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  // State management
-  const [isWaiting, setIsWaiting] = useState(true); // Waiting for all captions to be submitted
+  // State to show a loader while waiting for all captions to be submitted.
+  const [isWaiting, setIsWaiting] = useState(true);
   const [roomInfo, setRoomInfo] = useState<{ id: string; current_round_number: number } | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [memeUrl, setMemeUrl] = useState<string>('');
   const [roundId, setRoundId] = useState<string | null>(null);
-  
-  // Track who has voted using a Set for automatic deduplication
+  // Tracks which players have voted to update the UI and determine when everyone has voted.
   const [votedPlayerIds, setVotedPlayerIds] = useState<Set<string>>(new Set());
-  
-  // Track the current user's vote
+  // Tracks if the current user has voted to disable the voting UI.
   const [hasVoted, setHasVoted] = useState<string | null>(null);
+  // Ref to prevent the tallying function from being called multiple times.
   const hasTallied = useRef(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+  // State to track the user's selected caption before they confirm the vote.
+  const [selectedCaptionId, setSelectedCaptionId] = useState<string | null>(null);
+
+  // Establishes a real-time connection to the room's channel via Ably.
   const roomChannel = useRoomChannel(roomCode);
 
-  // Step 1: Fetch initial data (user, room) on component load
   useEffect(() => {
+    // Fetches the current user and room information on component mount.
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -72,26 +95,23 @@ export default function CaptionVotingPage() {
     initialize();
   }, [roomCode, router, toast]);
 
-  // Step 2: Once we have room info, fetch the current round details and all players
   useEffect(() => {
     if (!roomInfo) return;
     
+    // Fetches details for the current round (meme, etc.) and the list of players in the room.
     const fetchRoundAndPlayers = async () => {
       try {
         const { data: roundInfo, error: roundInfoError } = await supabase.rpc('get_current_round_info', { p_room_id: roomInfo.id });
         const currentRound = Array.isArray(roundInfo) ? roundInfo[0] : roundInfo;
         
-        if (roundInfoError || !currentRound) {
-          throw new Error("Couldn't load the current round.");
-        }
+        if (roundInfoError || !currentRound) throw new Error("Couldn't load the current round.");
         
         setRoundId(currentRound.round_id);
         setMemeUrl(currentRound.meme_image_url);
         
         const { data: playersData, error: playersError } = await supabase.from('players').select('*').eq('room_id', roomInfo.id);
-        if (playersError || !playersData) {
-            throw new Error("Couldn't fetch players.");
-        }
+        if (playersError || !playersData) throw new Error("Couldn't fetch players.");
+        
         setPlayers(playersData);
         
       } catch (error: any) {
@@ -102,14 +122,13 @@ export default function CaptionVotingPage() {
     fetchRoundAndPlayers();
   }, [roomInfo, toast]);
 
-  // Step 3 (THE FIX): Poll for captions only when we have the roundId and players list.
   useEffect(() => {
+    // This effect handles the "waiting" phase. It polls the DB to check if all players have submitted captions.
     if (!roundId || players.length === 0 || !isWaiting) return;
 
     const totalPlayers = players.length;
 
     const intervalId = setInterval(async () => {
-      // Efficiently get just the count of captions for the round
       const { error, count } = await supabase
         .from('captions')
         .select('*', { count: 'exact', head: true })
@@ -121,7 +140,7 @@ export default function CaptionVotingPage() {
         return;
       }
 
-      // Once all players have submitted, fetch the full caption data and stop polling.
+      // Once all captions are in, fetch them and switch to the voting view.
       if (count !== null && count >= totalPlayers) {
         clearInterval(intervalId);
         const { data: finalCaptions, error: finalCaptionsError } = await supabase
@@ -136,42 +155,54 @@ export default function CaptionVotingPage() {
         }
         setIsWaiting(false);
       }
-    }, 2500); // Check every 2.5 seconds
+    }, 2500);
 
     return () => clearInterval(intervalId);
   }, [roundId, players, isWaiting, toast]);
 
-
-  // Handle the end of voting by tallying votes and advancing to the next phase
+  // This function is called when the timer runs out or all players have voted.
   const tallyVotesAndEndRound = useCallback(async () => {
+    // Use a ref to ensure this is only called once per client.
     if (hasTallied.current || !roundId) return;
     hasTallied.current = true;
     
     toast({ title: 'Voting ended!', description: 'Tallying the results...' });
     
     try {
-      const { error } = await supabase.rpc('tally_caption_votes_and_finalize_round', { p_round_id: roundId });
+      // This RPC now includes a server-side check. It only tallies if all votes are in the DB.
+      // It returns `true` if it successfully finalized the round, `false` otherwise.
+      const { data: finalized, error } = await supabase.rpc('tally_caption_votes_and_finalize_round', { p_round_id: roundId });
+      
       if (error) throw error;
       
-      await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'round-results' });
+      // Only the client that successfully triggers the finalization will publish the event.
+      if (finalized) {
+        await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'round-results' });
+      } else {
+        // This can happen if this client's trigger was premature. 
+        // Resetting the ref allows this client to potentially try again if needed.
+        hasTallied.current = false;
+      }
     } catch (error: any) {
-      if (error.code !== '23505') { // Ignore expected race condition error
+      if (error.code !== '23505') { // Ignore unique violation errors, which can happen in race conditions.
         console.error('Error tallying votes:', error);
         toast({ title: "Error tallying votes", description: error.message, variant: 'destructive' });
-        hasTallied.current = false;
+        hasTallied.current = false; // Reset if there was a real error.
       }
     }
   }, [roundId, roomChannel, toast]);
 
-  // Subscribe to real-time events
   useEffect(() => {
+    // Sets up Ably subscriptions for real-time events.
     if (!roomChannel.isReady || !currentUserId) return;
     
+    // Handles vote events from other players to update the UI.
     const handleVoteCast = (data: CaptionVoteCastPayload, message: Ably.Message) => {
-      if (message.clientId === currentUserId) return; // Ignore self-sent events
+      if (message.clientId === currentUserId) return; // Ignore our own vote event
       setVotedPlayerIds(prev => new Set(prev).add(data.voterPlayerId));
     };
     
+    // Handles the signal to navigate to the next phase of the game.
     const handlePhaseChange = (data: GamePhaseChangedPayload) => {
       if (data.phase === 'round-results') {
         router.push(`/room/${roomCode}/round-results`);
@@ -187,30 +218,38 @@ export default function CaptionVotingPage() {
     };
   }, [roomChannel.isReady, router, roomCode, currentUserId]);
 
-  // Check if all players have voted
   useEffect(() => {
+    // Checks if all players have voted. If so, end the round.
     if (isWaiting || players.length === 0) return;
     if (votedPlayerIds.size >= players.length) {
       tallyVotesAndEndRound();
     }
   }, [isWaiting, players.length, votedPlayerIds, tallyVotesAndEndRound]);
+  
+  // Stores the ID of the caption the user clicks on.
+  const handleSelectCaption = (caption: Caption) => {
+    // Can't vote for self or change vote.
+    if (hasVoted || caption.player_id === currentUserId) return;
+    setSelectedCaptionId(caption.id);
+  };
 
-  // Handle a user voting for a caption
-  const handleVote = async (caption: Caption) => {
-    if (hasVoted || !currentUserId || !roundId) return;
+  // Confirms the selected caption as the user's final vote.
+  const handleConfirmVote = async () => {
+    if (!selectedCaptionId || hasVoted || !currentUserId || !roundId) return;
     
-    if (caption.player_id === currentUserId) {
-      toast({ title: "Can't vote for your own caption!", variant: 'destructive' });
-      return;
-    }
+    const caption = captions.find(c => c.id === selectedCaptionId);
+    if (!caption) return;
     
+    // Optimistically update the UI to show the vote has been cast.
     setHasVoted(caption.id);
     setVotedPlayerIds(prev => new Set(prev).add(currentUserId));
     
     try {
+      // Call the server function to securely record the vote.
       const { error } = await supabase.rpc('submit_caption_vote', { p_caption_id: caption.id });
       if (error) throw error;
       
+      // Announce the vote to other clients via Ably.
       await roomChannel.publish<CaptionVoteCastPayload>(RoomEvent.CAPTION_VOTE_CAST, {
         voterPlayerId: currentUserId,
         votedForCaptionId: caption.id
@@ -225,6 +264,7 @@ export default function CaptionVotingPage() {
       console.error("Error casting vote:", error);
       toast({ title: 'Vote Failed', description: error.message, variant: 'destructive' });
       
+      // Revert the optimistic UI update if the vote failed.
       setHasVoted(null);
       setVotedPlayerIds(prev => {
         const newSet = new Set(prev);
@@ -234,7 +274,7 @@ export default function CaptionVotingPage() {
     }
   };
 
-  // Show loading state while waiting for captions
+  // Display a loading spinner while waiting for captions.
   if (isWaiting) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
@@ -270,29 +310,36 @@ export default function CaptionVotingPage() {
               {captions.map((caption, index) => {
                 const isOwnCaption = caption.player_id === currentUserId;
                 return (
-                  <div key={caption.id} className="relative group h-full">
+                  <div
+                    key={caption.id}
+                    className="h-full"
+                    onClick={() => handleSelectCaption(caption)}
+                  >
                     <CaptionCard
                       captionText={caption.text_content}
                       captionNumber={index + 1}
-                      isVoted={hasVoted === caption.id}
-                      className={isOwnCaption ? "border-primary/50 bg-primary/5 cursor-not-allowed" : "cursor-pointer"}
+                      isVoted={selectedCaptionId === caption.id}
+                      className={isOwnCaption ? "border-primary/50 bg-primary/5 cursor-not-allowed opacity-70" : "cursor-pointer"}
                     />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-lg">
-                      <Button
-                        variant={hasVoted === caption.id ? "default" : "secondary"}
-                        onClick={() => handleVote(caption)}
-                        disabled={!!hasVoted || isOwnCaption}
-                        className="w-3/4 font-semibold shadow-lg btn-jackbox"
-                      >
-                        <ThumbsUp className="mr-2 h-5 w-5" />
-                        {hasVoted === caption.id ? "Voted!" : isOwnCaption ? "Your Caption" : "Vote"}
-                      </Button>
-                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {!hasVoted && (
+            <div className="mt-8 flex justify-center">
+              <Button 
+                size="lg" 
+                onClick={handleConfirmVote} 
+                disabled={!selectedCaptionId || !!hasVoted}
+                className="font-bold text-lg bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[250px] h-14"
+              >
+                <ThumbsUp className="mr-2 h-6 w-6" />
+                Confirm Vote
+              </Button>
+            </div>
+          )}
 
           {hasVoted && (
             <div className="mt-8 text-center">

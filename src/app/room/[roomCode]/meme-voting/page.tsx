@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { TimerBar } from '@/components/game/timer-bar';
@@ -32,18 +32,16 @@ export default function MemeVotingPage() {
   const [roomInfo, setRoomInfo] = useState<{ id: string; current_round_number: number } | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [candidates, setCandidates] = useState<MemeCandidate[]>([]);
-  
-  // A Set is used to automatically handle duplicate IDs and track who has voted.
   const [votedPlayerIds, setVotedPlayerIds] = useState<Set<string>>(new Set());
-  
-  // State to track if the current user has voted (disables their UI).
   const [hasVoted, setHasVoted] = useState<string | null>(null);
   const hasTallied = useRef(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  // New state to track the currently selected candidate before confirming
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
   const roomChannel = useRoomChannel(roomCode);
 
-  // Step 1: Fetch initial static data (room, user) on component load.
   useEffect(() => {
     const initialize = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -69,7 +67,6 @@ export default function MemeVotingPage() {
     initialize();
   }, [roomCode, router, toast]);
 
-  // Step 2: Poll for meme candidates AND the player list until everyone has submitted.
   useEffect(() => {
     if (!roomInfo) return;
     const intervalId = setInterval(async () => {
@@ -93,7 +90,6 @@ export default function MemeVotingPage() {
     return () => clearInterval(intervalId);
   }, [roomInfo]);
   
-  // Called when voting ends. Triggers the backend to tally votes.
   const tallyVotesAndEndRound = useCallback(async () => {
     if (hasTallied.current || !roomInfo) return;
     hasTallied.current = true;
@@ -106,7 +102,7 @@ export default function MemeVotingPage() {
         if (error) throw error;
         await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'caption-entry' });
     } catch (error: any) {
-        if (error.code !== '23505') { // Ignore expected race condition
+        if (error.code !== '23505') {
             console.error('Error tallying votes:', error);
             toast({ title: "Error tallying votes", description: error.message, variant: 'destructive' });
             hasTallied.current = false;
@@ -114,18 +110,11 @@ export default function MemeVotingPage() {
     }
   }, [roomInfo, roomChannel, toast]);
   
-  // This useEffect handles all real-time Ably event subscriptions.
   useEffect(() => {
     if (!roomChannel.isReady || isWaiting || !currentUserId) return;
     
-    // NEW LOGIC: Implements echo cancellation.
-    const handleVoteCast = (data: MemeVoteCastPayload, message: Ably.Types.Message) => {
-        // If the message came from the current user, ignore it.
-        // Their UI was already updated optimistically.
-        if (message.clientId === currentUserId) {
-            return;
-        }
-        // For all other users, update the list of who has voted.
+    const handleVoteCast = (data: MemeVoteCastPayload, message: Ably.Message) => {
+        if (message.clientId === currentUserId) return;
         setVotedPlayerIds(prev => new Set(prev).add(data.voterPlayerId));
     };
 
@@ -144,7 +133,6 @@ export default function MemeVotingPage() {
     };
   }, [roomChannel.isReady, isWaiting, router, roomCode, currentUserId]);
 
-  // This separate effect handles the game logic progression.
   useEffect(() => {
     if (isWaiting || players.length === 0) return;
     if (votedPlayerIds.size >= players.length) {
@@ -152,38 +140,40 @@ export default function MemeVotingPage() {
     }
   }, [isWaiting, players.length, votedPlayerIds, tallyVotesAndEndRound]);
   
-  // Handles the user clicking the "Vote" button.
-  const handleVote = async (candidate: MemeCandidate) => {
-    if (hasVoted || !currentUserId || !roomInfo) return;
-    if (candidate.submitted_by_player_id === currentUserId) {
-        toast({ title: "Can't vote for your own meme!", variant: 'destructive' });
-        return;
+  // New handler for selecting a meme card
+  const handleSelectCandidate = (candidate: MemeCandidate) => {
+    if (hasVoted || candidate.submitted_by_player_id === currentUserId) {
+      return; // Don't allow selection if already voted or it's their own
     }
-    
-    // Lock the UI for the current user.
-    setHasVoted(candidate.id);
+    setSelectedCandidateId(candidate.id);
+  };
 
-    // **OPTIMISTIC UPDATE**: Immediately update the local state for instant feedback.
+  // Renamed from handleVote to handle confirming the vote
+  const handleConfirmVote = async () => {
+    if (!selectedCandidateId || hasVoted || !currentUserId || !roomInfo) return;
+    
+    const candidate = candidates.find(c => c.id === selectedCandidateId);
+    if (!candidate) return;
+
+    setHasVoted(candidate.id);
     setVotedPlayerIds(prev => new Set(prev).add(currentUserId));
 
     try {
-        // Step 1: Tell the database about the vote.
         const { error } = await supabase.rpc('vote_for_meme_candidate', { p_meme_candidate_id: candidate.id });
         if (error) throw error;
 
-        // Step 2: Publish the event so other clients can update their state.
         await roomChannel.publish<MemeVoteCastPayload>(RoomEvent.MEME_VOTE_CAST, {
             voterPlayerId: currentUserId,
             votedForCandidateId: candidate.id,
         });
+        toast({ title: 'Vote Cast!', description: 'Your choice is locked in.', className: 'bg-card border-primary text-card-foreground' });
     } catch (error: any) {
         console.error("Error casting vote:", error);
         toast({ title: 'Vote Failed', description: error.message, variant: 'destructive' });
-        // **REVERT**: If the backend call fails, revert the optimistic updates.
         setHasVoted(null);
         setVotedPlayerIds(prev => {
             const newSet = new Set(prev);
-            newSet.delete(currentUserId);
+            newSet.delete(currentUserId!);
             return newSet;
         });
     }
@@ -212,37 +202,41 @@ export default function MemeVotingPage() {
           <TimerBar durationSeconds={30} onTimeUp={tallyVotesAndEndRound} className="mb-6" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-            {candidates.map(candidate => (
-              <div key={candidate.id} className="relative group">
-                <MemeCard
-                  memeUrl={candidate.image_url}
-                  altText={`Meme by ${candidate.submitter_name}`}
-                  isSelected={hasVoted === candidate.id}
-                  className="w-full"
-                >
-                  <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    <Button
-                      variant={hasVoted === candidate.id ? "default" : "secondary"}
-                      onClick={() => handleVote(candidate)}
-                      disabled={!!hasVoted || candidate.submitted_by_player_id === currentUserId}
-                      className="w-3/4 font-semibold"
-                    >
-                      <ThumbsUp className="mr-2 h-5 w-5" />
-                      {hasVoted === candidate.id ? "Voted!" : candidate.submitted_by_player_id === currentUserId ? "Your Meme" : "Vote"}
-                    </Button>
+            {candidates.map(candidate => {
+              const isOwnMeme = candidate.submitted_by_player_id === currentUserId;
+              return (
+                <div key={candidate.id} className="relative group">
+                  <MemeCard
+                    memeUrl={candidate.image_url}
+                    altText={`Meme by ${candidate.submitter_name}`}
+                    isSelected={selectedCandidateId === candidate.id}
+                    onClick={() => handleSelectCandidate(candidate)}
+                    className={isOwnMeme ? 'opacity-60 cursor-not-allowed' : ''}
+                  />
+                  <div className="flex justify-between items-center mt-2">
+                      <p className="text-sm text-muted-foreground">By: {candidate.submitter_name}</p>
+                      {isOwnMeme && (
+                        <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-full">Your Meme</span>
+                      )}
                   </div>
-                </MemeCard>
-                <div className="flex justify-between items-center mt-2">
-                    <p className="text-sm text-muted-foreground">By: {candidate.submitter_name}</p>
                 </div>
-                 {hasVoted === candidate.id && (
-                  <div className="absolute top-2 right-2 bg-accent text-accent-foreground p-2 rounded-full shadow-lg">
-                    <CheckCircle className="h-6 w-6" />
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
+
+          {!hasVoted && (
+            <div className="mt-8 flex justify-center">
+                <Button 
+                  size="lg" 
+                  onClick={handleConfirmVote} 
+                  disabled={!selectedCandidateId || !!hasVoted}
+                  className="font-bold text-lg bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[250px] h-14"
+                >
+                  <ThumbsUp className="mr-2 h-6 w-6" />
+                  Confirm Vote
+                </Button>
+            </div>
+          )}
 
           {hasVoted && (
             <div className="mt-8 text-center">

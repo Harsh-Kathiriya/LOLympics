@@ -9,7 +9,6 @@ interface MemeCardProps {
   altText?: string;
   isSelected?: boolean;
   onClick?: () => void;
-  children?: React.ReactNode;
   className?: string;
   dataAiHint?: string;
 }
@@ -19,7 +18,6 @@ export function MemeCard({
   altText = "Meme image",
   isSelected,
   onClick,
-  children,
   className,
   dataAiHint = "funny meme"
 }: MemeCardProps) {
@@ -37,14 +35,9 @@ export function MemeCard({
           src={memeUrl}
           alt={altText}
           fill
-          className="object-cover transition-opacity duration-300 group-hover:opacity-80"
+          className="object-cover"
           data-ai-hint={dataAiHint}
         />
-        {children && (
-          <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
-            {children}
-          </div>
-        )}
       </CardContent>
     </Card>
   );

@@ -28,7 +28,9 @@ export enum RoomEvent {
   ROUND_RESULTS_READY = 'round-results-ready',
   FINAL_RESULTS = 'final-results',
   PLAYER_AVATAR_CHANGED = 'player-avatar-changed',
-  MEME_VOTE_CAST = 'meme-vote-cast', // This event will now signal WHO voted.
+  MEME_VOTE_CAST = 'meme-vote-cast', 
+  CAPTION_VOTE_CAST = 'caption-vote-cast',
+  
   
 }
 
@@ -41,13 +43,15 @@ export interface GamePhaseChangedPayload { phase: string; data?: Record<string, 
 export interface PlayerAvatarChangedPayload { playerId: string; avatarSrc: string; }
 // CHANGED: The payload now clearly indicates who voted.
 export interface MemeVoteCastPayload { voterPlayerId: string; votedForCandidateId: string; }
+export interface CaptionVoteCastPayload { voterPlayerId: string; votedForCaptionId: string; }
+
 
 // --- Other Interfaces ---
 /** Data stored in Ably's presence set for each player. */
 export interface RoomPresenceData { status: 'online' | 'away' | 'idle'; isReady?: boolean; lastActivity?: number; avatarSrc?: string; playerId?: string; playerName?: string; }
 
 /** A union type for all possible event payloads. */
-export type RoomEventPayload = | PlayerJoinedPayload | PlayerLeftPayload | PlayerReadyUpdatePayload | GamePhaseChangedPayload | PlayerAvatarChangedPayload | MemeVoteCastPayload | PlayerNameUpdatePayload;
+export type RoomEventPayload = | PlayerJoinedPayload | PlayerLeftPayload | PlayerReadyUpdatePayload | GamePhaseChangedPayload | PlayerAvatarChangedPayload | MemeVoteCastPayload | PlayerNameUpdatePayload | CaptionVoteCastPayload;
 
 /** The return type of the `useRoomChannel` hook, defining what it provides to components. */
 export interface UseRoomChannelResult { 

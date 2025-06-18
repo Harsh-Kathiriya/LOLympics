@@ -296,19 +296,14 @@ RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$
 DECLARE
     room_ids_to_delete UUID[];
 BEGIN
-    -- Select all rooms that were created more than 2 hours ago, regardless of status.
     SELECT array_agg(id) INTO room_ids_to_delete
     FROM public.rooms
     WHERE created_at < NOW() - INTERVAL '2 hours';
 
-    -- Proceed only if there are rooms to delete
     IF array_length(room_ids_to_delete, 1) > 0 THEN
-        -- Delete all players associated with the rooms being deleted first
-        -- to satisfy foreign key constraints.
         DELETE FROM public.players
         WHERE room_id = ANY(room_ids_to_delete);
 
-        -- Delete the rooms themselves.
         DELETE FROM public.rooms
         WHERE id = ANY(room_ids_to_delete);
     END IF;
@@ -326,21 +321,14 @@ AS $$
 DECLARE
   v_room_id UUID;
 BEGIN
-  -- Get the room_id for the given room_code
   SELECT id INTO v_room_id FROM public.rooms WHERE room_code = p_room_code;
-
   IF v_room_id IS NULL THEN
     RAISE EXCEPTION 'Room not found for code: %', p_room_code;
   END IF;
-
-  -- Update the room status to 'meme-selection' to start the first phase of the game.
-  -- The WHERE clause ensures this runs only once, preventing race conditions if multiple
-  -- clients call it simultaneously.
   UPDATE public.rooms
   SET status = 'meme-selection',
       current_round_number = 1
   WHERE id = v_room_id AND status = 'lobby';
-
 END;
 $$;
 
@@ -414,8 +402,6 @@ END;
 $$;
 
 -- Function to get all meme candidates for a given round
--- This joins the necessary tables to return a list of proposed memes
--- along with the name of the player who submitted them.
 CREATE OR REPLACE FUNCTION public.get_meme_candidates_for_round(p_room_id UUID, p_round_number INTEGER)
 RETURNS TABLE (
     id UUID,
@@ -465,18 +451,12 @@ DECLARE
     v_meme_image_url TEXT;
     v_round_number INTEGER;
 BEGIN
-    -- First, get the current round number for the room from the 'rooms' table.
-    -- This tells us which round is currently active.
     SELECT r.current_round_number INTO v_current_round_number
     FROM public.rooms r
     WHERE r.id = p_room_id;
-
     IF v_current_round_number IS NULL THEN
         RAISE EXCEPTION 'Room not found or has no current round: %', p_room_id;
     END IF;
-
-    -- Now, using the current round number, find the specific 'rounds' entry.
-    -- Join with 'memes' to get the image URL for the winning meme of that round.
     SELECT
         r.id,
         m.image_url,
@@ -488,12 +468,9 @@ BEGIN
     FROM public.rounds r
     JOIN public.memes m ON r.meme_id = m.id
     WHERE r.room_id = p_room_id AND r.round_number = v_current_round_number;
-    
     IF v_round_id IS NULL THEN
         RAISE EXCEPTION 'Current round (round_number: %) data not found for room_id: %', v_current_round_number, p_room_id;
     END IF;
-
-    -- Return the round's ID and the meme URL for the client.
     RETURN QUERY SELECT v_round_id, v_meme_image_url, v_round_number;
 END;
 $$;
@@ -512,31 +489,214 @@ DECLARE
     v_player_id UUID;
     v_room_id UUID;
 BEGIN
-    -- Basic validation to prevent empty submissions.
     IF p_caption_text IS NULL OR trim(p_caption_text) = '' THEN
         RAISE EXCEPTION 'Caption text cannot be empty.';
     END IF;
-
-    -- Get the room_id from the round to verify the player is in the correct room.
     SELECT room_id INTO v_room_id FROM public.rounds WHERE id = p_round_id;
     IF v_room_id IS NULL THEN
         RAISE EXCEPTION 'Round not found.';
     END IF;
-
-    -- Authenticate the user and ensure they are a valid player in this room.
-    -- This prevents users from one room from submitting to another.
     SELECT id INTO v_player_id FROM public.players WHERE id = v_user_id AND room_id = v_room_id;
     IF v_player_id IS NULL THEN
         RAISE EXCEPTION 'Player is not in the specified room for this round.';
     END IF;
-
-    -- Insert the caption. The unique constraint 'captions_one_per_player_per_round' on the table
-    -- automatically prevents a player from submitting more than one caption for the same round.
     INSERT INTO public.captions (round_id, player_id, text_content)
     VALUES (p_round_id, v_player_id, p_caption_text);
 END;
 $$;
 COMMENT ON FUNCTION public.submit_caption(UUID, TEXT) IS 'Allows an authenticated player to submit a text caption for a specific round.';
+
+-- Function for a player to vote on a submitted caption
+DROP FUNCTION IF EXISTS public.submit_caption_vote(p_caption_id UUID);
+CREATE OR REPLACE FUNCTION public.submit_caption_vote(p_caption_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+    v_round_id UUID;
+    v_caption_author_id UUID;
+    v_room_id UUID;
+BEGIN
+    SELECT c.round_id, c.player_id INTO v_round_id, v_caption_author_id
+    FROM public.captions c
+    WHERE c.id = p_caption_id;
+    IF v_round_id IS NULL THEN
+        RAISE EXCEPTION 'Caption not found.';
+    END IF;
+    SELECT r.room_id INTO v_room_id
+    FROM public.rounds r
+    WHERE r.id = v_round_id;
+    IF NOT public.is_player_in_room(v_user_id, v_room_id) THEN
+        RAISE EXCEPTION 'Player is not in the correct room for this vote.';
+    END IF;
+    IF v_user_id = v_caption_author_id THEN
+        RAISE EXCEPTION 'You cannot vote for your own caption.';
+    END IF;
+    INSERT INTO public.votes (round_id, caption_id, voter_player_id)
+    VALUES (v_round_id, p_caption_id, v_user_id);
+END;
+$$;
+COMMENT ON FUNCTION public.submit_caption_vote(UUID) IS 'Allows an authenticated player to cast a vote for a caption, with validation.';
+
+-- Function to tally caption votes, award points, and finalize the round
+DROP FUNCTION IF EXISTS public.tally_caption_votes_and_finalize_round(p_round_id UUID);
+CREATE OR REPLACE FUNCTION public.tally_caption_votes_and_finalize_round(p_round_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+    v_room_id UUID;
+    v_is_finalized BOOLEAN;
+    v_featured_winning_caption_id UUID;
+BEGIN
+    -- 1. Lock the round to prevent race conditions. This is essential.
+    SELECT room_id, (winning_caption_id IS NOT NULL) INTO v_room_id, v_is_finalized
+    FROM public.rounds
+    WHERE id = p_round_id
+    FOR UPDATE;
+
+    -- Exit if another transaction just finished this work.
+    IF v_is_finalized THEN
+        RETURN;
+    END IF;
+
+    -- 2. Use a single, comprehensive query with CTEs to update player scores.
+    -- This is a stateless approach that prevents issues from one round affecting the next.
+    WITH vote_counts AS (
+        -- Count votes for each caption in the round
+        SELECT
+            c.id AS caption_id,
+            c.player_id,
+            COUNT(v.id) AS votes
+        FROM public.captions c
+        LEFT JOIN public.votes v ON c.id = v.caption_id AND v.round_id = c.round_id
+        WHERE c.round_id = p_round_id
+        GROUP BY c.id, c.player_id
+    ),
+    max_votes_cte AS (
+        -- Find the highest vote count. Use GREATEST to ensure it's at least 0.
+        SELECT GREATEST(MAX(votes), 0) AS max_v FROM vote_counts
+    ),
+    winners AS (
+        -- Identify all players who achieved the max vote count, but only if votes > 0
+        SELECT player_id
+        FROM vote_counts
+        WHERE votes = (SELECT max_v FROM max_votes_cte) AND (SELECT max_v FROM max_votes_cte) > 0
+    ),
+    points AS (
+        -- Calculate points per winner. If no winners (no votes > 0), this will be 0.
+        SELECT
+            CASE
+                WHEN (SELECT COUNT(*) FROM winners) > 0
+                THEN floor(100 / (SELECT COUNT(*) FROM winners))
+                ELSE 0
+            END AS points_to_add
+    )
+    UPDATE public.players p
+    SET current_score = p.current_score + (SELECT points_to_add FROM points)
+    WHERE p.id IN (SELECT player_id FROM winners);
+
+    -- 3. Select a "featured" winning caption for the UI.
+    -- This is done separately and after the scoring to keep logic clean.
+    -- It prioritizes an actual winner, but falls back to a random caption if there's a 0-0 tie.
+    SELECT c.id INTO v_featured_winning_caption_id
+    FROM public.captions c
+    LEFT JOIN public.votes v ON c.id = v.caption_id
+    WHERE c.round_id = p_round_id
+    GROUP BY c.id
+    ORDER BY COUNT(v.id) DESC, random()
+    LIMIT 1;
+
+    -- 4. Finalize the round and update the room status
+    UPDATE public.rounds
+    SET winning_caption_id = v_featured_winning_caption_id
+    WHERE id = p_round_id;
+
+    UPDATE public.rooms
+    SET status = 'round-results'
+    WHERE id = v_room_id;
+END;
+$$;
+COMMENT ON FUNCTION public.tally_caption_votes_and_finalize_round(UUID) IS 'Calculates winning caption and awards points. Uses a stateless CTE approach to handle ties correctly and locking to prevent race conditions.';
+-- Function to get all details for the round results page in one call
+DROP FUNCTION IF EXISTS public.get_round_results_details(p_round_id UUID);
+CREATE OR REPLACE FUNCTION public.get_round_results_details(p_round_id UUID)
+RETURNS jsonb
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+    v_results jsonb;
+    v_max_votes INT;
+    v_winner_count INT;
+    v_points_per_winner INT;
+BEGIN
+    -- Determine points awarded in this round
+    SELECT COALESCE(MAX(votes), 0) INTO v_max_votes
+    FROM (
+        SELECT COUNT(id) as votes
+        FROM public.votes v
+        WHERE v.round_id = p_round_id
+        GROUP BY v.caption_id
+    ) as vote_counts;
+
+    IF v_max_votes > 0 THEN
+        SELECT COUNT(*) INTO v_winner_count
+        FROM (
+            SELECT 1
+            FROM public.votes v
+            WHERE v.round_id = p_round_id
+            GROUP BY v.caption_id
+            HAVING COUNT(id) = v_max_votes
+        ) as winners;
+        v_points_per_winner := floor(100 / v_winner_count);
+    ELSE
+        v_points_per_winner := 0;
+    END IF;
+
+    -- Aggregate all data into a single JSONB object
+    SELECT jsonb_build_object(
+        'memeUrl', m.image_url,
+        'currentRound', r.round_number,
+        'totalRounds', rm.total_rounds,
+        'winningCaption', (
+            SELECT jsonb_build_object(
+                'id', wc.id,
+                'text', wc.text_content,
+                'authorId', wc.player_id,
+                'authorName', p.username,
+                'pointsAwarded', v_points_per_winner -- Use calculated points
+            )
+            FROM public.captions wc
+            JOIN public.players p ON wc.player_id = p.id
+            WHERE wc.id = r.winning_caption_id
+        ),
+        'players', (
+            SELECT jsonb_agg(
+                jsonb_build_object(
+                    'id', pl.id,
+                    'name', pl.username,
+                    'score', pl.current_score,
+                    'avatarUrl', pl.avatar_src
+                ) ORDER BY pl.current_score DESC
+            )
+            FROM public.players pl
+            WHERE pl.room_id = r.room_id
+        )
+    )
+    INTO v_results
+    FROM public.rounds r
+    JOIN public.rooms rm ON r.room_id = rm.id
+    JOIN public.memes m ON r.meme_id = m.id
+    WHERE r.id = p_round_id;
+
+    RETURN v_results;
+END;
+$$;
+COMMENT ON FUNCTION public.get_round_results_details(UUID) IS 'Fetches all necessary data for the round results page, including the winning meme, caption, author, points awarded, and current leaderboard.';
 
 -- Function to advance the game to the next round
 DROP FUNCTION IF EXISTS public.advance_to_next_round(p_room_id UUID);
@@ -550,19 +710,14 @@ DECLARE
   v_current_round_number INTEGER;
   v_total_rounds INTEGER;
 BEGIN
-    -- Get current round details
     SELECT current_round_number, total_rounds INTO v_current_round_number, v_total_rounds
     FROM public.rooms
     WHERE id = p_room_id;
-
-    -- Check if the game should end
     IF v_current_round_number >= v_total_rounds THEN
-        -- Set status to 'finished'
         UPDATE public.rooms
         SET status = 'finished'
         WHERE id = p_room_id;
     ELSE
-        -- Increment round number and reset status for the next round
         UPDATE public.rooms
         SET current_round_number = v_current_round_number + 1,
             status = 'meme-selection'
@@ -570,6 +725,31 @@ BEGIN
     END IF;
 END;
 $$;
+
+-- New function to reset a game for "Play Again"
+DROP FUNCTION IF EXISTS public.reset_game(p_room_id UUID);
+CREATE OR REPLACE FUNCTION public.reset_game(p_room_id UUID)
+RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+    v_user_id UUID := auth.uid();
+BEGIN
+    IF NOT public.is_player_in_room(v_user_id, p_room_id) THEN
+        RAISE EXCEPTION 'Only a player in the room can restart the game.';
+    END IF;
+    UPDATE public.players
+    SET current_score = 0,
+        is_ready = FALSE
+    WHERE room_id = p_room_id;
+    DELETE FROM public.rounds WHERE room_id = p_room_id;
+    UPDATE public.rooms
+    SET current_round_number = 1,
+        status = 'lobby'
+    WHERE id = p_room_id;
+END;
+$$;
+COMMENT ON FUNCTION public.reset_game(UUID) IS 'Resets a finished game back to the lobby state with the same players.';
 
 -- ========= Part 3: Row Level Security (RLS) =========
 -- These policies secure the database by ensuring users can only access data
@@ -579,8 +759,8 @@ $$;
 CREATE OR REPLACE FUNCTION public.get_current_room_id()
 RETURNS UUID
 LANGUAGE plpgsql
-STABLE -- Indicates the function cannot modify the database and returns same results for same arguments
-SECURITY INVOKER -- Runs as the user calling it, not the user who defined it
+STABLE
+SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
@@ -599,12 +779,9 @@ SECURITY INVOKER
 SET search_path = ''
 AS $$
 BEGIN
-  -- First check if user is authenticated at all
   IF auth.uid() IS NULL THEN
     RETURN FALSE;
   END IF;
-  
-  -- Then check if they have a player record
   RETURN EXISTS (
     SELECT 1 FROM public.players WHERE id = auth.uid()
   );
@@ -624,69 +801,76 @@ ALTER TABLE public.meme_candidate_votes ENABLE ROW LEVEL SECURITY;
 -- ==== POLICIES ====
 
 -- ROOMS Policies: Users can see the room they are in.
+DROP POLICY IF EXISTS "Allow players to see their own room" ON public.rooms;
 CREATE POLICY "Allow players to see their own room"
 ON public.rooms FOR SELECT
 USING (id = public.get_current_room_id());
 
--- Add a policy to allow users to find rooms by room_code during join/create
+DROP POLICY IF EXISTS "Allow anyone to find rooms by code" ON public.rooms;
 CREATE POLICY "Allow anyone to find rooms by code"
 ON public.rooms FOR SELECT
 USING (true);
 
 -- PLAYERS Policies: Users can see all players in their room, but can only update themselves.
+DROP POLICY IF EXISTS "Allow players to see other players in their room" ON public.players;
 CREATE POLICY "Allow players to see other players in their room"
 ON public.players FOR SELECT
 USING (room_id = public.get_current_room_id());
 
--- Add policy to allow selecting players by room_id directly (needed for room initialization)
+DROP POLICY IF EXISTS "Allow selecting players by room_id" ON public.players;
 CREATE POLICY "Allow selecting players by room_id"
 ON public.players FOR SELECT
 USING (true);
 
+DROP POLICY IF EXISTS "Allow player to update their own record" ON public.players;
 CREATE POLICY "Allow player to update their own record"
 ON public.players FOR UPDATE
 USING (id = auth.uid());
 
--- Allow players to insert themselves into a room
+DROP POLICY IF EXISTS "Allow players to insert themselves" ON public.players;
 CREATE POLICY "Allow players to insert themselves"
 ON public.players FOR INSERT
 WITH CHECK (id = auth.uid());
 
--- Allow players to delete their own record
+DROP POLICY IF EXISTS "Allow players to delete their own record" ON public.players;
 CREATE POLICY "Allow players to delete their own record"
 ON public.players FOR DELETE
 USING (id = auth.uid());
 
--- Modify the players policy to allow users to see players in any room
--- This is needed during initial room loading
+DROP POLICY IF EXISTS "Allow authenticated users to see players" ON public.players;
 CREATE POLICY "Allow authenticated users to see players"
 ON public.players FOR SELECT
 USING (auth.uid() IS NOT NULL);
 
 -- MEMES Policies: Memes are public assets.
+DROP POLICY IF EXISTS "Allow all users to see memes" ON public.memes;
 CREATE POLICY "Allow all users to see memes"
 ON public.memes FOR SELECT
 USING (true);
 
 -- GAME DATA Policies: Users can interact with game data only for the room they are in.
 -- ROUNDS
+DROP POLICY IF EXISTS "Allow players to see rounds in their room" ON public.rounds;
 CREATE POLICY "Allow players to see rounds in their room"
 ON public.rounds FOR SELECT
 USING (room_id = public.get_current_room_id());
 
 -- MEME CANDIDATES
+DROP POLICY IF EXISTS "Allow players to see/create meme candidates in their room" ON public.meme_candidates;
 CREATE POLICY "Allow players to see/create meme candidates in their room"
 ON public.meme_candidates FOR ALL
 USING (is_player_in_room(auth.uid(), room_id))
 WITH CHECK (is_player_in_room(auth.uid(), room_id));
 
 -- MEME CANDIDATE VOTES
+DROP POLICY IF EXISTS "Allow players to see/create meme votes in their room" ON public.meme_candidate_votes;
 CREATE POLICY "Allow players to see/create meme votes in their room"
 ON public.meme_candidate_votes FOR ALL
 USING (is_player_in_room(auth.uid(), room_id))
 WITH CHECK (is_player_in_room(auth.uid(), room_id));
 
 -- CAPTIONS
+DROP POLICY IF EXISTS "Allow players to see/create captions in their room" ON public.captions;
 CREATE POLICY "Allow players to see/create captions in their room"
 ON public.captions FOR ALL
 USING (EXISTS (
@@ -695,12 +879,12 @@ USING (EXISTS (
 ));
 
 -- VOTES (on captions)
+DROP POLICY IF EXISTS "Allow players to see/create caption votes in their room" ON public.votes;
 CREATE POLICY "Allow players to see/create caption votes in their room"
 ON public.votes FOR ALL
 USING (EXISTS (
-    SELECT 1 FROM public.captions c
-    JOIN public.rounds r ON c.round_id = r.id
-    WHERE c.id = caption_id AND r.room_id = public.get_current_room_id()
+    SELECT 1 FROM public.rounds r
+    WHERE r.id = round_id AND r.room_id = public.get_current_room_id()
 ));
 
 -- Add debugging function to help diagnose RLS issues
@@ -725,14 +909,17 @@ END;
 $$;
 
 -- Fix the ROUNDS policy to use proper room_id check
+DROP POLICY IF EXISTS "Allow players to insert rounds in their room" ON public.rounds;
 CREATE POLICY "Allow players to insert rounds in their room"
 ON public.rounds FOR INSERT
 WITH CHECK (room_id = public.get_current_room_id());
 
+DROP POLICY IF EXISTS "Allow players to update rounds in their room" ON public.rounds;
 CREATE POLICY "Allow players to update rounds in their room"
 ON public.rounds FOR UPDATE
 USING (room_id = public.get_current_room_id());
 
+DROP POLICY IF EXISTS "Allow players to delete rounds in their room" ON public.rounds;
 CREATE POLICY "Allow players to delete rounds in their room"
 ON public.rounds FOR DELETE
 USING (room_id = public.get_current_room_id());
@@ -740,15 +927,9 @@ USING (room_id = public.get_current_room_id());
 -- ========= Part 4: Automated Cleanup Job =========
 -- This section sets up the cron job to periodically clean old rooms.
 
--- 1. Create the pg_cron extension if it doesn't exist
 CREATE EXTENSION IF NOT EXISTS pg_cron;
-
--- 2. Grant usage to postgres role
--- (This might require superuser privileges, but is often pre-configured on Supabase)
 GRANT USAGE ON SCHEMA cron TO postgres;
 
--- 3. Unschedule any existing job with the same name to avoid duplicates
--- This is safe to run even if the job doesn't exist.
 DO $$
 BEGIN
    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'hourly-room-cleanup') THEN
@@ -757,13 +938,8 @@ BEGIN
 END;
 $$;
 
--- 4. Schedule the cleanup function to run every hour
 SELECT cron.schedule(
-    'hourly-room-cleanup', -- name of the cron job
-    '0 * * * *',           -- cron syntax for "at minute 0 of every hour"
+    'hourly-room-cleanup',
+    '0 * * * *',
     $$ SELECT public.clean_old_rooms(); $$
 );
-
--- Note: After running this script, you should enable Row Level Security (RLS) on each table
--- from the Supabase dashboard and add policies appropriate for your application's security requirements.
--- Your README.md contains guidelines on how these policies should be structured. 

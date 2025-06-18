@@ -1,9 +1,7 @@
-import { NextResponse } from 'next/server';
-import { NextRequest } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
-// This is the backend proxy route for fetching TRENDING memes from Tenor.
-// It receives a request from the client, forwards it to the Tenor API with the secret key,
-// and then pipes the response back to the client. This avoids CORS errors and protects the API key.
+// This is the backend proxy route for fetching FEATURED memes from Tenor.
+// It forwards the request to the Tenor API and pipes the response back to the client.
 export async function GET(request: NextRequest) {
   const apiKey = process.env.TENOR_API_KEY;
   const clientKey = process.env.NEXT_PUBLIC_TENOR_CLIENT_KEY;
@@ -19,6 +17,12 @@ export async function GET(request: NextRequest) {
   featuredUrl.searchParams.set('client_key', clientKey);
   featuredUrl.searchParams.set('limit', '24');
   featuredUrl.searchParams.set('media_filter', 'gif');
+
+  // Forward the `pos` param for pagination if it exists
+  const pos = request.nextUrl.searchParams.get('pos');
+  if (pos) {
+    featuredUrl.searchParams.set('pos', pos);
+  }
 
   try {
     const tenorResponse = await fetch(featuredUrl.toString());

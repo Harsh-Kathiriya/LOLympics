@@ -11,6 +11,7 @@ interface MemeCardProps {
   onClick?: () => void;
   className?: string;
   dataAiHint?: string;
+  children?: React.ReactNode;
 }
 
 export function MemeCard({
@@ -19,7 +20,8 @@ export function MemeCard({
   isSelected,
   onClick,
   className,
-  dataAiHint = "funny meme"
+  dataAiHint = "funny meme",
+  children,
 }: MemeCardProps) {
   return (
     <Card 
@@ -38,6 +40,7 @@ export function MemeCard({
           className="object-cover"
           data-ai-hint={dataAiHint}
         />
+        {children}
       </CardContent>
     </Card>
   );

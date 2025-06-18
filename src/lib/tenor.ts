@@ -74,19 +74,15 @@ export async function searchTenorMemes(query: string, limit: number = 24, pos?: 
  * @returns A promise that resolves to an array of TenorMeme objects.
  */
 export async function getTrendingTenorMemes(limit: number = 24, pos?: string) {
-  // We're using a hardcoded search query to ensure the memes fit the party theme.
-  const searchQuery = 'funny memes';
-
   const params = new URLSearchParams({
-    q: searchQuery,
     limit: String(limit),
   });
   if (pos) {
     params.set('pos', pos);
   }
 
-  // Call our own backend search route.
-  const response = await fetch(`/api/memes/search?${params.toString()}`);
+  // Call our own backend route for trending memes.
+  const response = await fetch(`/api/memes/trending?${params.toString()}`);
 
   if (!response.ok) {
     const errorData = await response.json();

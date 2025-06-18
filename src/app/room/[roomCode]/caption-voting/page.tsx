@@ -34,6 +34,7 @@ import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload, CaptionVoteCastPayload } from '@/hooks/use-room-channel';
 import { Player } from '@/types/player';
 import Ably from 'ably';
+import { PlayerAvatar } from '@/components/game/player-avatar';
 
 type Caption = {
   id: string;
@@ -286,70 +287,110 @@ export default function CaptionVotingPage() {
   }
 
   return (
-    <div className="max-w-6xl mx-auto py-8">
-      <Card className="shadow-xl card-jackbox border-2 border-primary/70">
-        <CardHeader className="text-center">
-          <CardTitle className="font-headline text-4xl text-primary title-jackbox">Vote for the Best Caption!</CardTitle>
-          <CardDescription>
-            {votedPlayerIds.size} / {players.length} players have voted. You have 45 seconds!
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TimerBar durationSeconds={45} onTimeUp={tallyVotesAndEndRound} className="mb-6" />
+    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left Column: Meme and Game Info */}
+        <div className="lg:col-span-1 space-y-6 sticky top-24">
+          <Card className="shadow-xl card-jackbox border-2 border-primary/70 overflow-hidden">
+            <CardHeader className="text-center pb-2">
+              <CardTitle className="font-headline text-3xl text-primary title-jackbox">The Meme</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-lg overflow-hidden shadow-lg border border-border">
+                <img
+                  src={memeUrl}
+                  alt="Meme to be captioned"
+                  className="w-full max-h-[400px] object-contain bg-black"
+                />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="shadow-xl card-jackbox border-2 border-primary/70">
+            <CardHeader>
+              <CardTitle className="font-headline text-2xl text-primary title-jackbox flex items-center">
+                <Vote className="mr-3 h-6 w-6"/>
+                Voting Status
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-lg text-center">
+                <span className="font-bold text-accent">{votedPlayerIds.size}</span> out of <span className="font-bold text-accent">{players.length}</span> players have voted.
+              </p>
+              <div className="mt-4 flex justify-center space-x-2">
+                {players.map(p => (
+                  <PlayerAvatar 
+                    key={p.id}
+                    name={p.username}
+                    avatarUrl={p.avatar_src}
+                    isReady={votedPlayerIds.has(p.id)}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-            <div className="md:col-span-2 rounded-lg overflow-hidden shadow-lg border border-border sticky top-24 self-start">
-              <img
-                src={memeUrl}
-                alt="Meme being captioned"
-                className="w-full max-h-[400px] object-contain bg-black"
-              />
-            </div>
+        {/* Right Column: Title, Timer, Captions, and Actions */}
+        <div className="lg:col-span-2 space-y-6">
+          <Card className="shadow-xl card-jackbox border-2 border-primary/70 text-center">
+            <CardHeader>
+              <CardTitle className="font-headline text-4xl text-primary title-jackbox">Vote for the Best Caption!</CardTitle>
+              <CardDescription>
+                You have 45 seconds to pick your favorite. Choose wisely!
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <TimerBar durationSeconds={45} onTimeUp={tallyVotesAndEndRound} />
+            </CardContent>
+          </Card>
 
-            <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {captions.map((caption, index) => {
-                const isOwnCaption = caption.player_id === currentUserId;
-                return (
-                  <div
-                    key={caption.id}
-                    className="h-full"
-                    onClick={() => handleSelectCaption(caption)}
-                  >
-                    <CaptionCard
-                      captionText={caption.text_content}
-                      captionNumber={index + 1}
-                      isVoted={selectedCaptionId === caption.id}
-                      className={isOwnCaption ? "border-primary/50 bg-primary/5 cursor-not-allowed opacity-70" : "cursor-pointer"}
-                    />
-                  </div>
-                );
-              })}
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {captions.map((caption, index) => {
+              const isOwnCaption = caption.player_id === currentUserId;
+              return (
+                <div
+                  key={caption.id}
+                  className="h-full"
+                  onClick={() => handleSelectCaption(caption)}
+                >
+                  <CaptionCard
+                    captionText={caption.text_content}
+                    captionNumber={index + 1}
+                    isVoted={selectedCaptionId === caption.id}
+                    className={`transition-all duration-200 ${isOwnCaption ? "border-primary/50 bg-primary/5 cursor-not-allowed opacity-70" : "cursor-pointer hover:scale-105 hover:border-accent"}`}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           {!hasVoted && (
-            <div className="mt-8 flex justify-center">
+            <div className="pt-4 flex justify-center">
               <Button 
                 size="lg" 
                 onClick={handleConfirmVote} 
                 disabled={!selectedCaptionId || !!hasVoted}
-                className="font-bold text-lg bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[250px] h-14"
+                className="font-bold text-lg bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[300px] h-16 shadow-lg transform hover:scale-105 transition-transform"
               >
-                <ThumbsUp className="mr-2 h-6 w-6" />
-                Confirm Vote
+                <ThumbsUp className="mr-3 h-7 w-7" />
+                Lock In Your Vote
               </Button>
             </div>
           )}
 
           {hasVoted && (
-            <div className="mt-8 text-center">
-              <Button size="lg" disabled className="font-bold text-lg bg-primary hover:bg-primary/90">
-                Waiting for others to vote... <Vote className="ml-2 h-5 w-5 animate-pulse"/>
-              </Button>
+            <div className="pt-4 text-center">
+              <Card className="bg-background/80 p-6 inline-block">
+                <h3 className="font-headline text-2xl text-primary flex items-center justify-center">
+                  <CheckCircle className="mr-3 h-8 w-8 text-green-500"/>
+                  Vote Locked In!
+                </h3>
+                <p className="text-muted-foreground mt-2">Waiting for the other players to cast their votes...</p>
+              </Card>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

@@ -290,7 +290,7 @@ export default function CaptionVotingPage() {
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Left Column: Meme and Game Info */}
-        <div className="lg:col-span-1 space-y-6 sticky top-24">
+        <div className="lg:col-span-1 space-y-6 lg:sticky top-24">
           <Card className="shadow-xl card-jackbox border-2 border-primary/70 overflow-hidden">
             <CardHeader className="text-center pb-2">
               <CardTitle className="font-headline text-3xl text-primary title-jackbox">The Meme</CardTitle>
@@ -321,7 +321,7 @@ export default function CaptionVotingPage() {
                   <PlayerAvatar 
                     key={p.id}
                     name={p.username}
-                    avatarUrl={p.avatar_src}
+                    avatarUrl={p.avatar_src ?? undefined}
                     isReady={votedPlayerIds.has(p.id)}
                   />
                 ))}

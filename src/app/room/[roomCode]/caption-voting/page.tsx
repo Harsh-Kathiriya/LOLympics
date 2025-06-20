@@ -35,6 +35,7 @@ import { useRoomChannel, RoomEvent, GamePhaseChangedPayload, CaptionVoteCastPayl
 import { Player } from '@/types/player';
 import Ably from 'ably';
 import { PlayerAvatar } from '@/components/game/player-avatar';
+import { CAPTION_VOTING_DURATION } from '@/lib/constants';
 
 type Caption = {
   id: string;
@@ -336,11 +337,11 @@ export default function CaptionVotingPage() {
             <CardHeader>
               <CardTitle className="font-headline text-4xl text-primary title-jackbox">Vote for the Best Caption!</CardTitle>
               <CardDescription>
-                You have 45 seconds to pick your favorite. Choose wisely!
+                You have {CAPTION_VOTING_DURATION} seconds to pick your favorite. Choose wisely!
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <TimerBar durationSeconds={45} onTimeUp={tallyVotesAndEndRound} />
+              <TimerBar durationSeconds={CAPTION_VOTING_DURATION} onTimeUp={tallyVotesAndEndRound} />
             </CardContent>
           </Card>
 

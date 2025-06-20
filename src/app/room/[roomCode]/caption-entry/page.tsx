@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { Loader2 } from 'lucide-react';
+import { CAPTION_ENTRY_DURATION } from '@/lib/constants';
 
 /**
  * CaptionEntryPage Component
@@ -144,10 +145,10 @@ export default function CaptionEntryPage() {
       <Card className="shadow-xl card-jackbox border-2 border-primary/70">
         <CardHeader className="text-center">
           <CardTitle className="font-headline text-4xl text-primary title-jackbox">Caption This Meme!</CardTitle>
-          <CardDescription>Write your funniest caption. You have 60 seconds!</CardDescription>
+          <CardDescription>Write your funniest caption. You have {CAPTION_ENTRY_DURATION} seconds!</CardDescription>
         </CardHeader>
         <CardContent>
-          <TimerBar durationSeconds={60} onTimeUp={handleTimeUp} className="mb-6" />
+          <TimerBar durationSeconds={CAPTION_ENTRY_DURATION} onTimeUp={handleTimeUp} className="mb-6" />
           <CaptionInput 
             onSubmit={handleSubmitCaption} 
             memeImageUrl={memeUrl}

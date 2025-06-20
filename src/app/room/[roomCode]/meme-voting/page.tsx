@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, MemeVoteCastPayload, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
 import { Player } from '@/types/player';
 import Ably from 'ably';
+import { MEME_VOTING_DURATION } from '@/lib/constants';
 
 type MemeCandidate = {
   id: string;
@@ -195,11 +196,11 @@ export default function MemeVotingPage() {
         <CardHeader className="text-center">
           <CardTitle className="font-headline text-4xl text-primary title-jackbox">Vote for a Meme</CardTitle>
           <CardDescription>
-            {votedPlayerIds.size} / {players.length} players have voted. You have 30 seconds!
+            {votedPlayerIds.size} / {players.length} players have voted. You have {MEME_VOTING_DURATION} seconds!
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <TimerBar durationSeconds={30} onTimeUp={tallyVotesAndEndRound} className="mb-6" />
+          <TimerBar durationSeconds={MEME_VOTING_DURATION} onTimeUp={tallyVotesAndEndRound} className="mb-6" />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
             {candidates.map(candidate => {

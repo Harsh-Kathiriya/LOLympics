@@ -35,12 +35,12 @@ import {
   RoomPresenceData,
   PlayerAvatarChangedPayload
 } from '@/hooks/use-room-channel';
+import { MIN_PLAYERS_TO_START } from '@/lib/constants';
 
 // Configuration constants for avatar management and game rules
 const AVATAR_BASE_PATH = '/assets/avatars/';
 const DEFAULT_AVATAR_FILE = 'eduardo.png';
 const DEFAULT_AVATAR_SRC = `${AVATAR_BASE_PATH}${DEFAULT_AVATAR_FILE}`;
-const MIN_PLAYERS_TO_START = 1; // Minimum players required to start the game
 
 // Player data structure for lobby management
 type Player = {
@@ -361,9 +361,8 @@ export default function LobbyPage() {
   /**
    * Handle avatar change
    */
-  const handleAvatarChange = useCallback(async (newAvatarFile: string) => {
+  const handleAvatarChange = useCallback(async (newAvatarSrc: string) => {
     if (!currentUser || !roomChannel.isConnected) return;
-    const newAvatarSrc = `${AVATAR_BASE_PATH}${newAvatarFile}`;
     if (currentUser.avatarUrl === newAvatarSrc) return;
 
     try {
@@ -481,7 +480,7 @@ export default function LobbyPage() {
               <Users className="mr-3 h-7 w-7 md:h-8 md:w-8" /> Players ({players.length})
             </h3>
             <AvatarSelector
-              currentAvatar={currentUser.avatarUrl.replace(AVATAR_BASE_PATH, '')}
+              currentAvatar={currentUser.avatarUrl}
               currentName={currentUser.name}
               onAvatarChange={handleAvatarChange}
               onNameChange={handleNameChange}

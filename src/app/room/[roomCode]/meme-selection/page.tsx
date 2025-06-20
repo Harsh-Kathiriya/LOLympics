@@ -16,6 +16,7 @@ import { MemeSearchBar } from '@/components/game/meme-search-bar';
 import { LoadMoreButton } from '@/components/game/load-more-button';
 import { MemeConfirmationButton } from '@/components/game/meme-confirmation-button';
 import { MemeSubmissionSuccess } from '@/components/game/meme-submission-success';
+import { MEME_SELECTION_DURATION } from '@/lib/constants';
 
 /**
  * MemeSelectionPage Component
@@ -116,11 +117,11 @@ export default function MemeSelectionPage() {
       <Card className="shadow-2xl card-jackbox border-2 border-primary/70">
         <CardHeader className="text-center border-b-2 border-border pb-6">
           <CardTitle className="font-headline text-5xl text-primary title-jackbox">Select a Meme</CardTitle>
-          <CardDescription className="font-body text-lg">Choose a meme for this round. You have 30 seconds!</CardDescription>
+          <CardDescription className="font-body text-lg">Choose a meme for this round. You have {MEME_SELECTION_DURATION} seconds!</CardDescription>
         </CardHeader>
         <CardContent className="pt-6">
           {/* Timer bar is always visible for the phase */}
-          <TimerBar durationSeconds={30} onTimeUp={handleTimeUp} className="mb-8" />
+          <TimerBar durationSeconds={MEME_SELECTION_DURATION} onTimeUp={handleTimeUp} className="mb-8" />
           {renderContent()}
         </CardContent>
       </Card>

@@ -35,6 +35,7 @@ import { Award, ArrowRightCircle, Loader2, Users } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
+import { ROUND_RESULTS_DURATION } from '@/lib/constants';
 
 type WinningCaption = {
   id: string;
@@ -137,7 +138,7 @@ export default function RoundResultsPage() {
   useEffect(() => {
     // Automatically trigger the 'next' action after a delay to keep the game moving.
     if (isLoading || !results) return;
-    const timer = setTimeout(() => handleNext(), 12000);
+    const timer = setTimeout(() => handleNext(), ROUND_RESULTS_DURATION * 1000);
     return () => clearTimeout(timer);
   }, [isLoading, results, handleNext]);
   

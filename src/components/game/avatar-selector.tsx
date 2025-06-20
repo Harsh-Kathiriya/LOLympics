@@ -39,9 +39,9 @@ const avatars = [
 ];
 
 interface AvatarSelectorProps {
-  currentAvatar: string; // This will now be just the filename, e.g., 'eduardo.png'
+  currentAvatar: string; // This is now the full URL, e.g., '/assets/avatars/eduardo.png'
   currentName: string;
-  onAvatarChange: (avatarName: string) => void;
+  onAvatarChange: (avatarUrl: string) => void;
   onNameChange: (name: string) => void;
 }
 
@@ -51,20 +51,20 @@ export function AvatarSelector({
   onAvatarChange, 
   onNameChange
 }: AvatarSelectorProps) {
-  const [selectedAvatarFile, setSelectedAvatarFile] = useState<string>(currentAvatar);
+  const [selectedAvatarFile, setSelectedAvatarFile] = useState<string>(currentAvatar.replace(AVATAR_BASE_PATH, ''));
   const [playerName, setPlayerName] = useState<string>(currentName);
   const [open, setOpen] = useState(false);
 
   // Reset state when the dialog opens
   useEffect(() => {
     if (open) {
-      setSelectedAvatarFile(currentAvatar);
+      setSelectedAvatarFile(currentAvatar.replace(AVATAR_BASE_PATH, ''));
       setPlayerName(currentName);
     }
   }, [open, currentAvatar, currentName]);
 
   const handleSave = () => {
-    onAvatarChange(selectedAvatarFile);
+    onAvatarChange(`${AVATAR_BASE_PATH}${selectedAvatarFile}`);
     onNameChange(playerName);
     setOpen(false);
   };

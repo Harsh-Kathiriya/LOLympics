@@ -15,8 +15,7 @@ export function CountdownOverlay({ duration, onCountdownEnd }: CountdownOverlayP
 
   useEffect(() => {
     if (count > 0) {
-      // Sound effect: Drumroll tick
-      // new Audio('/sounds/drum_tick.mp3').play(); 
+      // No sound effects for countdown ticks
       setAnimationClass('animate-bounce-custom'); // Reset animation for each number
       const timer = setTimeout(() => {
         setCount(count - 1);
@@ -24,8 +23,7 @@ export function CountdownOverlay({ duration, onCountdownEnd }: CountdownOverlayP
       }, 1000);
       return () => clearTimeout(timer);
     } else if (count === 0) {
-      // Sound effect: Final drumroll hit / Go sound
-      // new Audio('/sounds/drum_finish.mp3').play();
+      // No sound effects for "GO!" message
       setAnimationClass('animate-bounce-custom');
       const timer = setTimeout(() => {
         console.log("CountdownOverlay: Countdown finished. Calling onCountdownEnd."); // Added log

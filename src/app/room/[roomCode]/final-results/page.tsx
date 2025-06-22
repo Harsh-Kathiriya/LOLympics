@@ -10,6 +10,7 @@ import { Share2, RotateCcw, Home, Trophy, Loader2 } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
+import { soundManager } from '@/lib/sound';
 
 type PlayerData = {
   id: string;
@@ -45,6 +46,11 @@ export default function FinalResultsPage() {
         
         const formattedPlayers: PlayerData[] = playersData.map(player => ({ id: player.id, name: player.username, score: player.current_score, avatarUrl: player.avatar_src || undefined }));
         setPlayers(formattedPlayers);
+        
+        // Play final result sound when results are loaded
+        if (soundManager) {
+          soundManager.playFinalResult();
+        }
       } catch (error: any) {
         toast({ title: "Error loading results", description: error.message, variant: "destructive" });
       } finally {
@@ -58,6 +64,11 @@ export default function FinalResultsPage() {
   const handlePlayAgain = async () => {
     if (!roomId || isPlayingAgain) return;
     setIsPlayingAgain(true);
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
     
     try {
       const { error } = await supabase.rpc('reset_game', { p_room_id: roomId });
@@ -77,6 +88,11 @@ export default function FinalResultsPage() {
     if (isLeavingGame || !roomId) return;
     setIsLeavingGame(true);
     
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
     try {
       await supabase.rpc('leave_room', { p_room_id: roomId });
       toast({ title: "New Game", description: "Returning to home screen." });
@@ -89,6 +105,12 @@ export default function FinalResultsPage() {
 
   const handleShare = () => {
     if (!overallWinner) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
     const shareText = `I just played Caption Clash! ${overallWinner.name} won with ${overallWinner.score} points in room ${roomCode}!`;
     if (navigator.share) {
       navigator.share({ title: 'Caption Clash Results', text: shareText, url: window.location.href });

@@ -36,6 +36,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
 import { ROUND_RESULTS_DURATION } from '@/lib/constants';
+import { soundManager } from '@/lib/sound';
 
 type WinningCaption = {
   id: string;
@@ -102,6 +103,11 @@ export default function RoundResultsPage() {
         
         setResults(resultsData as RoundResult);
         setIsLoading(false);
+        
+        // Play round result sound when results are loaded
+        if (soundManager) {
+          soundManager.playRoundResult();
+        }
 
       } catch (error: any) {
         console.log(error.message);
@@ -121,6 +127,11 @@ export default function RoundResultsPage() {
   const handleNext = useCallback(async () => {
     if (isNavigating.current || !results || !roomId) return;
     isNavigating.current = true;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
     
     try {
       // Call the server function to update the room state.

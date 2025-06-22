@@ -13,6 +13,7 @@ import { useRoomChannel, RoomEvent, MemeVoteCastPayload, GamePhaseChangedPayload
 import { Player } from '@/types/player';
 import Ably from 'ably';
 import { MEME_VOTING_DURATION } from '@/lib/constants';
+import { soundManager } from '@/lib/sound';
 
 type MemeCandidate = {
   id: string;
@@ -146,12 +147,23 @@ export default function MemeVotingPage() {
     if (hasVoted || candidate.submitted_by_player_id === currentUserId) {
       return; // Don't allow selection if already voted or it's their own
     }
+    
+    // Play settings click sound (buttonClick3) for meme selection
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+    
     setSelectedCandidateId(candidate.id);
   };
 
   // Renamed from handleVote to handle confirming the vote
   const handleConfirmVote = async () => {
     if (!selectedCandidateId || hasVoted || !currentUserId || !roomInfo) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
     
     const candidate = candidates.find(c => c.id === selectedCandidateId);
     if (!candidate) return;

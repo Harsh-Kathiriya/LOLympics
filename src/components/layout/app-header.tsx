@@ -13,19 +13,41 @@ import {
 } from "@/components/ui/sheet";
 import { SettingsContent } from './settings-content';
 import { TutorialContent } from './tutorial-content';
+import { soundManager } from '@/lib/sound';
 
 export function AppHeader() {
+  const handleSettingsClick = () => {
+    // Play settings click sound
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+  };
+
+  const handleTutorialClick = () => {
+    // Play settings click sound
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+  };
+
+  const handleLogoClick = () => {
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+  };
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-border/60 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/50 shadow-sm">
       <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2 group" aria-label="Caption Clash Home">
+        <Link href="/" className="flex items-center gap-2 group" aria-label="Caption Clash Home" onClick={handleLogoClick}>
           <Gamepad2 className="h-7 w-7 text-primary transition-transform duration-300 group-hover:-rotate-12 group-hover:text-accent" />
           <span className="font-headline text-xl font-bold text-primary transition-colors duration-300 group-hover:text-accent">Caption Clash</span>
         </Link>
         <div className="flex items-center gap-1 sm:gap-2">
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="How to Play" className="rounded-full p-2 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors">
+              <Button variant="ghost" size="icon" aria-label="How to Play" className="rounded-full p-2 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors" onClick={handleTutorialClick}>
                 <HelpCircle className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -44,7 +66,7 @@ export function AppHeader() {
 
           <Sheet>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Settings" className="rounded-full p-2 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors">
+              <Button variant="ghost" size="icon" aria-label="Settings" className="rounded-full p-2 text-muted-foreground hover:bg-accent/10 hover:text-accent transition-colors" onClick={handleSettingsClick}>
                 <SlidersHorizontal className="h-5 w-5" />
               </Button>
             </SheetTrigger>

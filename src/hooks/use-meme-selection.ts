@@ -3,6 +3,7 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { TenorMeme } from '@/lib/tenor';
 import { useToast } from '@/hooks/use-toast';
+import { soundManager } from '@/lib/sound';
 
 interface UseMemeSelectionProps {
   roomId: string;
@@ -75,6 +76,12 @@ export function useMemeSelection({
    */
   const handleSelectMeme = useCallback((memeId: string) => {
     if (hasSubmitted) return; // Don't allow changes after submitting
+    
+    // Play settings click sound (buttonClick3) for meme selection
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+    
     setSelectedMemeId(prevId => memeId === prevId ? null : memeId);
   }, [hasSubmitted]);
 
@@ -89,6 +96,11 @@ export function useMemeSelection({
         variant: "destructive",
       });
       return;
+    }
+
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
     }
 
     const selectedMeme = memes.find(m => m.id === selectedMemeId);

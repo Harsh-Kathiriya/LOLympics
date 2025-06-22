@@ -9,6 +9,29 @@ import { PlusCircle, LogIn, ArrowRight, User } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useAbly } from '@/components/AblyContext';
+import { soundManager } from '@/lib/sound';
+
+// Particle component for background effect
+const Particles = () => {
+  return (
+    <div className="absolute inset-0 -z-10 overflow-hidden">
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div 
+          key={i} 
+          className="particle absolute rounded-full bg-primary/10"
+          style={{
+            top: `${Math.random() * 100}%`,
+            left: `${Math.random() * 100}%`,
+            width: `${Math.random() * 20 + 5}px`,
+            height: `${Math.random() * 20 + 5}px`,
+            animationDelay: `${Math.random() * 5}s`,
+            animationDuration: `${Math.random() * 10 + 10}s`
+          }}
+        />
+      ))}
+    </div>
+  );
+};
 
 export default function HomePage() {
   const [roomCode, setRoomCode] = useState('');
@@ -86,6 +109,11 @@ export default function HomePage() {
       return;
     }
 
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+
     setIsCreatingRoom(true);
 
     try {
@@ -105,6 +133,11 @@ export default function HomePage() {
         const { new_room_id, generated_room_code } = data[0];
         
         initializeAbly();
+        
+        // Start playing background music
+        if (soundManager) {
+          soundManager.toggleBackgroundMusic(true);
+        }
         
         toast({
           title: "Room Created!",
@@ -155,6 +188,11 @@ export default function HomePage() {
       return;
     }
 
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+
     setIsJoiningRoom(true);
 
     try {
@@ -178,6 +216,11 @@ export default function HomePage() {
         const { joined_room_id } = data[0];
         
         initializeAbly();
+        
+        // Start playing background music
+        if (soundManager) {
+          soundManager.toggleBackgroundMusic(true);
+        }
         
         toast({
           title: "Joined Room!",
@@ -207,18 +250,23 @@ export default function HomePage() {
 
   
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] py-12">
-      <div className="text-center mb-8">
-        <h1 className="font-headline text-7xl font-bold text-primary animate-pulse title-jackbox">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] py-12 relative">
+      <Particles />
+      <div className="text-center mb-8 relative">
+        <div className="absolute inset-0 -z-10 bg-gradient-to-r from-primary/5 via-accent/10 to-primary/5 rounded-3xl blur-3xl animate-gradient-shift"></div>
+        <h1 className="font-headline text-7xl font-bold text-primary animate-pulse title-jackbox text-glow">
           Caption Clash
         </h1>
         <p className="text-muted-foreground text-xl mt-2 font-body">
           The Ultimate Multiplayer Meme Captioning Game
         </p>
+        <div className="mt-4 inline-block bg-black/10 backdrop-blur-sm px-4 py-2 rounded-full">
+          <p className="text-accent font-medium animate-float">✨ Create memes. Vote for the best. Laugh together. ✨</p>
+        </div>
       </div>
 
       <div className="w-full max-w-sm mb-8">
-          <Card className="card-jackbox border-muted">
+          <Card className="card-jackbox border-primary hover:border-accent hover:shadow-lg transform hover:scale-105 transition-all duration-300">
               <CardHeader className="p-4">
                   <label htmlFor="username" className="text-lg font-medium text-muted-foreground font-headline flex items-center justify-center">
                       <User className="mr-3 h-6 w-6" /> First, Enter Your Nickname
@@ -239,10 +287,10 @@ export default function HomePage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
-        <Card className="card-jackbox border-primary hover:border-accent">
+        <Card className="card-jackbox border-muted hover:border-accent hover:shadow-lg transform hover:-translate-y-2 transition-all duration-300">
           <CardHeader>
             <CardTitle className="font-headline text-3xl flex items-center text-accent">
-              <PlusCircle className="mr-3 h-8 w-8" />
+              <PlusCircle className="mr-3 h-8 w-8 transition-transform group-hover:rotate-90 duration-300" />
               Create a New Room
             </CardTitle>
             <CardDescription className="font-body">
@@ -260,15 +308,15 @@ export default function HomePage() {
               disabled={isCreatingRoom || !isAuthenticated}
             >
               {isCreatingRoom ? 'Creating Room...' : 'Create Room'}
-              {!isCreatingRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
+              {!isCreatingRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />}
             </Button>
           </CardFooter>
         </Card>
 
-        <Card className="card-jackbox border-secondary hover:border-accent">
+        <Card className="card-jackbox border-secondary hover:border-accent hover:shadow-lg transform hover:-translate-y-2 transition-all duration-300">
           <CardHeader>
             <CardTitle className="font-headline text-3xl flex items-center text-accent">
-              <LogIn className="mr-3 h-8 w-8" />
+              <LogIn className="mr-3 h-8 w-8 transition-transform group-hover:translate-x-1 duration-300" />
               Join an Existing Room
             </CardTitle>
             <CardDescription className="font-body">
@@ -294,14 +342,11 @@ export default function HomePage() {
               disabled={isJoiningRoom || !isAuthenticated}
             >
               {isJoiningRoom ? 'Joining Room...' : 'Join Room'}
-              {!isJoiningRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
+              {!isJoiningRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />}
             </Button>
           </CardFooter>
         </Card>
       </div>
-       <p className="mt-12 text-sm text-muted-foreground">
-          Tip: Press <kbd className="kbd-jackbox">Ctrl/Cmd</kbd> + <kbd className="kbd-jackbox">B</kbd> to toggle sidebar
-        </p>
     </div>
   );
 }

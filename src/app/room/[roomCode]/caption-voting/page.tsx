@@ -36,6 +36,7 @@ import { Player } from '@/types/player';
 import Ably from 'ably';
 import { PlayerAvatar } from '@/components/game/player-avatar';
 import { CAPTION_VOTING_DURATION } from '@/lib/constants';
+import { soundManager } from '@/lib/sound';
 
 type Caption = {
   id: string;
@@ -232,12 +233,23 @@ export default function CaptionVotingPage() {
   const handleSelectCaption = (caption: Caption) => {
     // Can't vote for self or change vote.
     if (hasVoted || caption.player_id === currentUserId) return;
+    
+    // Play settings click sound (buttonClick3) for caption selection
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+    
     setSelectedCaptionId(caption.id);
   };
 
   // Confirms the selected caption as the user's final vote.
   const handleConfirmVote = async () => {
     if (!selectedCaptionId || hasVoted || !currentUserId || !roundId) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
     
     const caption = captions.find(c => c.id === selectedCaptionId);
     if (!caption) return;

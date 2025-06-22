@@ -1,16 +1,59 @@
-
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import { Volume2, Music, Moon, Sun } from 'lucide-react';
+import { Slider } from "@/components/ui/slider";
+import { Volume2, VolumeX, Music, Moon, Sun } from 'lucide-react';
+import { soundManager, SOUNDS, useSound } from '@/lib/sound';
 
 export function SettingsContent() {
+  // Initialize state with default values
   const [soundEffects, setSoundEffects] = useState(true);
-  const [music, setMusic] = useState(false); // Default music off for now
-  const [darkMode, setDarkMode] = useState(true); // Assuming default dark theme
+  const [music, setMusic] = useState(false);
+  const [volume, setVolume] = useState(70); // 0-100 scale for UI
+  const [darkMode, setDarkMode] = useState(true);
+
+  // Load settings from sound manager on component mount
+  useEffect(() => {
+    if (soundManager) {
+      const settings = soundManager.getSettings();
+      setSoundEffects(settings.soundEffectsEnabled);
+      setMusic(settings.musicEnabled);
+      setVolume(Math.round(settings.volume * 100));
+    }
+  }, []);
+
+  const handleToggleSoundEffects = (enabled: boolean) => {
+    setSoundEffects(enabled);
+    if (soundManager) {
+      soundManager.toggleSoundEffects(enabled);
+      // Play a sound effect when enabling to demonstrate
+      if (enabled) {
+        soundManager.playSettingsClick();
+      }
+    }
+  };
+
+  const handleToggleMusic = (enabled: boolean) => {
+    setMusic(enabled);
+    if (soundManager) {
+      soundManager.toggleBackgroundMusic(enabled);
+    }
+  };
+
+  const handleVolumeChange = (value: number[]) => {
+    const newVolume = value[0];
+    setVolume(newVolume);
+    if (soundManager) {
+      soundManager.setVolume(newVolume / 100);
+      // Play a sound to demonstrate the new volume if sound effects are enabled
+      if (soundEffects) {
+        soundManager.playSettingsClick();
+      }
+    }
+  };
 
   const handleToggleDarkMode = (enabled: boolean) => {
     setDarkMode(enabled);
@@ -19,8 +62,12 @@ export function SettingsContent() {
     } else {
       document.documentElement.classList.remove('dark');
     }
-    // In a real app, you'd persist this preference (e.g., localStorage)
-  }
+    // Play settings click sound
+    if (soundManager && soundEffects) {
+      soundManager.playSettingsClick();
+    }
+    localStorage.setItem('darkMode', String(enabled));
+  };
 
   return (
     <div className="space-y-6 p-2 font-body">
@@ -34,7 +81,7 @@ export function SettingsContent() {
           <Switch
             id="sound-effects-toggle"
             checked={soundEffects}
-            onCheckedChange={setSoundEffects}
+            onCheckedChange={handleToggleSoundEffects}
             className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted"
           />
         </div>
@@ -46,8 +93,30 @@ export function SettingsContent() {
           <Switch
             id="music-toggle"
             checked={music}
-            onCheckedChange={setMusic}
+            onCheckedChange={handleToggleMusic}
             className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-muted"
+          />
+        </div>
+        <div className="p-3 bg-background/50 rounded-md border border-border">
+          <div className="flex items-center justify-between mb-2">
+            <Label htmlFor="volume-slider" className="flex items-center text-base">
+              {volume > 0 ? (
+                <Volume2 className="mr-3 h-5 w-5 text-primary" />
+              ) : (
+                <VolumeX className="mr-3 h-5 w-5 text-primary" />
+              )}
+              Volume
+            </Label>
+            <span className="text-sm font-medium text-muted-foreground">{volume}%</span>
+          </div>
+          <Slider
+            id="volume-slider"
+            value={[volume]}
+            min={0}
+            max={100}
+            step={1}
+            onValueChange={handleVolumeChange}
+            className="w-full"
           />
         </div>
       </div>

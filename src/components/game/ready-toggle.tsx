@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'; // Added Loader2 for potential loading state
+import { soundManager } from '@/lib/sound';
 
 interface ReadyToggleProps {
   isReady: boolean;
@@ -18,6 +19,11 @@ export function ReadyToggle({ isReady: initialIsReady, onToggle, playerId, disab
 
   const handleToggle = async (checked: boolean) => {
     if (disabled) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
     
     // setIsLoading(true); // Example for async
     setIsReady(checked);

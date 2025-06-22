@@ -36,9 +36,10 @@ import {
   PlayerAvatarChangedPayload
 } from '@/hooks/use-room-channel';
 import { MIN_PLAYERS_TO_START } from '@/lib/constants';
+import { soundManager } from '@/lib/sound';
 
 // Configuration constants for avatar management and game rules
-const AVATAR_BASE_PATH = '/assets/avatars/';
+const AVATAR_BASE_PATH = '/public/assets/avatars/';
 const DEFAULT_AVATAR_FILE = 'eduardo.png';
 const DEFAULT_AVATAR_SRC = `${AVATAR_BASE_PATH}${DEFAULT_AVATAR_FILE}`;
 
@@ -319,6 +320,12 @@ export default function LobbyPage() {
    */
   const handleLeaveRoom = useCallback(async () => {
     if (!roomId || !currentUser) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
     try {
       await supabase.rpc('leave_room', { p_room_id: roomId });
       if (roomChannel.isConnected) {
@@ -337,6 +344,12 @@ export default function LobbyPage() {
    */
   const handleReadyToggle = useCallback(async (playerId: string, ready: boolean) => {
     if (!currentUser || playerId !== currentUser.id || !roomChannel.isConnected) return;
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
     try {
       await supabase.from('players').update({ is_ready: ready }).eq('id', playerId).throwOnError();
       const updatedUser = { ...currentUser, isReady: ready };
@@ -364,6 +377,11 @@ export default function LobbyPage() {
   const handleAvatarChange = useCallback(async (newAvatarSrc: string) => {
     if (!currentUser || !roomChannel.isConnected) return;
     if (currentUser.avatarUrl === newAvatarSrc) return;
+
+    // Play settings click sound for avatar selection
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
 
     try {
       await supabase.from('players').update({ avatar_src: newAvatarSrc }).eq('id', currentUser.id).throwOnError();
@@ -395,6 +413,11 @@ export default function LobbyPage() {
   const handleNameChange = useCallback(async (name: string) => {
     if (!currentUser || !roomChannel.isConnected) return;
     if (currentUser.name === name) return;
+
+    // Play settings click sound for name change
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
 
     try {
       await supabase.from('players').update({ username: name }).eq('id', currentUser.id).throwOnError();
@@ -446,6 +469,11 @@ export default function LobbyPage() {
     if (roomCode) {
       navigator.clipboard.writeText(roomCode);
       toast({ title: "Room Code Copied!", description: `Code "${roomCode}" copied.` });
+      
+      // Play button click sound
+      if (soundManager) {
+        soundManager.playButtonClick();
+      }
     }
   }, [roomCode, toast]);
 

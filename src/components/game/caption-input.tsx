@@ -5,6 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Send, Loader2 } from 'lucide-react';
+import { soundManager } from '@/lib/sound';
 
 interface CaptionInputProps {
   /** Function to call when the user submits their caption. */
@@ -29,6 +30,11 @@ export function CaptionInput({ onSubmit, maxLength = 150, memeImageUrl, isSubmit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (caption.trim() && !isSubmitting) {
+      // Play button click sound
+      if (soundManager) {
+        soundManager.playButtonClick();
+      }
+      
       onSubmit(caption.trim());
     }
   };

@@ -82,8 +82,8 @@ These are smaller suggestions that improve code quality and maintainability.
 **Recommendation:** Create a `src/lib/constants.ts` file to store these values. This makes it much easier to balance the game's pacing later.
 ```typescript
 // src/lib/constants.ts
-export const MEME_SELECTION_DURATION = 30;
-export const MEME_VOTING_DURATION = 30;
+export const MEME_SELECTION_DURATION = 60;
+export const MEME_VOTING_DURATION = 60;
 export const CAPTION_ENTRY_DURATION = 60;
 export const CAPTION_VOTING_DURATION = 45;
 export const ROUND_RESULTS_DURATION = 12; // In seconds

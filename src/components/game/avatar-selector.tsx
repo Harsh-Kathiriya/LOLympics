@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PlayerAvatar } from './player-avatar';
+import { soundManager } from '@/lib/sound';
 
 // Define the available avatars
 const AVATAR_BASE_PATH = '/assets/avatars/';
@@ -66,13 +67,37 @@ export function AvatarSelector({
   const handleSave = () => {
     onAvatarChange(`${AVATAR_BASE_PATH}${selectedAvatarFile}`);
     onNameChange(playerName);
+    
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
     setOpen(false);
+  };
+  
+  const handleSelectAvatar = (file: string) => {
+    // Play settings click sound for avatar selection
+    if (soundManager) {
+      soundManager.playSettingsClick();
+    }
+    
+    setSelectedAvatarFile(file);
+  };
+
+  const handleOpenDialog = () => {
+    // Play button click sound
+    if (soundManager) {
+      soundManager.playButtonClick();
+    }
+    
+    setOpen(true);
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="w-full sm:w-auto btn-jackbox">
+        <Button variant="outline" className="w-full sm:w-auto btn-jackbox" onClick={handleOpenDialog}>
           Edit Profile
         </Button>
       </DialogTrigger>
@@ -114,7 +139,7 @@ export function AvatarSelector({
                     ? 'bg-primary/20 ring-2 ring-primary' 
                     : 'hover:bg-secondary'
                 }`}
-                onClick={() => setSelectedAvatarFile(avatar.file)}
+                onClick={() => handleSelectAvatar(avatar.file)}
               >
                 <div className="relative h-16 w-16 mx-auto">
                   <Image

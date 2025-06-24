@@ -10,28 +10,11 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useAbly } from '@/components/AblyContext';
 import { soundManager } from '@/lib/sound';
+import dynamic from 'next/dynamic';
 
-// Particle component for background effect
-const Particles = () => {
-  return (
-    <div className="absolute inset-0 -z-10 overflow-hidden">
-      {Array.from({ length: 20 }).map((_, i) => (
-        <div 
-          key={i} 
-          className="particle absolute rounded-full bg-primary/10"
-          style={{
-            top: `${Math.random() * 100}%`,
-            left: `${Math.random() * 100}%`,
-            width: `${Math.random() * 20 + 5}px`,
-            height: `${Math.random() * 20 + 5}px`,
-            animationDelay: `${Math.random() * 5}s`,
-            animationDuration: `${Math.random() * 10 + 10}s`
-          }}
-        />
-      ))}
-    </div>
-  );
-};
+// Dynamically import the Particles component _client-side only_ to prevent
+// server-client hydration mismatches caused by randomised inline styles.
+const Particles = dynamic(() => import('@/components/particles').then(mod => mod.default), { ssr: false });
 
 export default function HomePage() {
   const [roomCode, setRoomCode] = useState('');
@@ -255,13 +238,13 @@ export default function HomePage() {
       <div className="text-center mb-8 relative">
         <div className="absolute inset-0 -z-10 bg-gradient-to-r from-primary/5 via-accent/10 to-primary/5 rounded-3xl blur-3xl animate-gradient-shift"></div>
         <h1 className="font-headline text-7xl font-bold text-primary animate-pulse title-jackbox text-glow">
-          Caption Clash
+          LOLympics
         </h1>
         <p className="text-muted-foreground text-xl mt-2 font-body">
-          The Ultimate Multiplayer Meme Captioning Game
+          The Insanely Hilarious Meme-Medal Competition
         </p>
         <div className="mt-4 inline-block bg-black/10 backdrop-blur-sm px-4 py-2 rounded-full">
-          <p className="text-accent font-medium animate-float">✨ Create memes. Vote for the best. Laugh together. ✨</p>
+          <p className="text-accent font-medium animate-float">🏆 Create memes. Win gold. Become a MEME-DALIST! 🥇</p>
         </div>
       </div>
 
@@ -269,14 +252,14 @@ export default function HomePage() {
           <Card className="card-jackbox border-primary hover:border-accent hover:shadow-lg transform hover:scale-105 transition-all duration-300">
               <CardHeader className="p-4">
                   <label htmlFor="username" className="text-lg font-medium text-muted-foreground font-headline flex items-center justify-center">
-                      <User className="mr-3 h-6 w-6" /> First, Enter Your Nickname
+                      <User className="mr-3 h-6 w-6" /> Choose Your Athlete Name
                   </label>
               </CardHeader>
               <CardContent className="p-4 pt-0">
                   <Input
                       id="username"
                       type="text"
-                      placeholder="Your cool nickname..."
+                      placeholder="Your Olympic nickname..."
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
                       className="h-14 text-center text-xl border-2 border-input focus:border-accent placeholder:text-muted-foreground/70 font-body"
@@ -291,14 +274,14 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle className="font-headline text-3xl flex items-center text-accent">
               <PlusCircle className="mr-3 h-8 w-8 transition-transform group-hover:rotate-90 duration-300" />
-              Create a New Room
+              Host the LOLympics
             </CardTitle>
             <CardDescription className="font-body">
-              Start a new game and invite your friends to the clash!
+              Become the host nation and invite athletes to your meme stadium!
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="font-body text-sm text-muted-foreground">Enter a nickname above, then click here to start a new game.</p>
+            <p className="font-body text-sm text-muted-foreground">Enter your athlete name above, then click here to light the Olympic torch!</p>
           </CardContent>
           <CardFooter>
             <Button
@@ -307,7 +290,7 @@ export default function HomePage() {
               onClick={handleCreateRoom}
               disabled={isCreatingRoom || !isAuthenticated}
             >
-              {isCreatingRoom ? 'Creating Room...' : 'Create Room'}
+              {isCreatingRoom ? 'Lighting Torch...' : 'Host the Games'}
               {!isCreatingRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />}
             </Button>
           </CardFooter>
@@ -317,16 +300,16 @@ export default function HomePage() {
           <CardHeader>
             <CardTitle className="font-headline text-3xl flex items-center text-accent">
               <LogIn className="mr-3 h-8 w-8 transition-transform group-hover:translate-x-1 duration-300" />
-              Join an Existing Room
+              Join the Competition
             </CardTitle>
             <CardDescription className="font-body">
-              Got a room code? Enter it here to join the fun!
+              Got an invitation? Enter the country code to join the games!
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Input
               type="text"
-              placeholder="ENTER ROOM CODE"
+              placeholder="ENTER COUNTRY CODE"
               value={roomCode}
               onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
               className="text-center text-xl font-code tracking-widest h-14 border-2 border-input focus:border-accent placeholder:text-muted-foreground/70"
@@ -341,7 +324,7 @@ export default function HomePage() {
               onClick={handleJoinRoom}
               disabled={isJoiningRoom || !isAuthenticated}
             >
-              {isJoiningRoom ? 'Joining Room...' : 'Join Room'}
+              {isJoiningRoom ? 'Joining Games...' : 'Compete Now'}
               {!isJoiningRoom && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform duration-300" />}
             </Button>
           </CardFooter>

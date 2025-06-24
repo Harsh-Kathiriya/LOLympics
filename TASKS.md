@@ -189,7 +189,7 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
 ## V. UI/UX Enhancements (Stretch Goals / Nice-to-Haves)
 
 -   **[ ] Advanced Animations & Transitions:**
-    -   [ ] Add more engaging animations for phase transitions, score reveals, player actions (e.g., using Framer Motion).
+    -   [X] Add more engaging animations for phase transitions, score reveals, player actions (e.g., confetti & fireworks celebrations for round and final results).
 -   **[ ] Sound Effects & Background Music:**
     -   [ ] Integrate subtle sound effects for actions like button clicks, timers, votes, and round reveals.
     -   [ ] Option for unobtrusive background music in the lobby/game.
@@ -223,6 +223,7 @@ This document outlines the necessary tasks to refine the frontend, integrate bac
 
 ### Task List
 
+- [X] Rebrand the game from Caption Clash to LOLympics with Olympic-themed language and visuals throughout the UI.
 - [X] Fix `start_game` function in `db_restore.sql`.
 - [X] Update lobby page to call `start_game` instead of `start_game_and_create_round`.
 - [X] Update `README.md` to reflect the changes in the database and game flow.

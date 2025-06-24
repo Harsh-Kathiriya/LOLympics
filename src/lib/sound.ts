@@ -27,7 +27,7 @@ class SoundManager {
   // Settings
   private soundEffectsEnabled: boolean = true;
   private musicEnabled: boolean = false;
-  private volume: number = 0.4; // Default volume (0-1)
+  private volume: number = 0.6; // Default volume (0-1)
   
   // Cache for sound effects
   private soundEffectsCache: Map<string, HTMLAudioElement> = new Map();
@@ -56,7 +56,7 @@ class SoundManager {
       
       this.soundEffectsEnabled = savedSoundEffects !== null ? savedSoundEffects === 'true' : true;
       this.musicEnabled = savedMusic !== null ? savedMusic === 'true' : false;
-      this.volume = savedVolume !== null ? parseFloat(savedVolume) : 0.7;
+      this.volume = savedVolume !== null ? parseFloat(savedVolume) : 0.6;
     }
   }
   

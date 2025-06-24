@@ -27,8 +27,8 @@ const sourceCodePro = Source_Code_Pro({
 });
 
 export const metadata: Metadata = {
-  title: 'Caption Clash',
-  description: 'A real-time multiplayer meme caption game.',
+  title: 'LOLympics',
+  description: 'A crazy multiplayer meme competition for the gold medal of comedy!',
 };
 
 export default function RootLayout({

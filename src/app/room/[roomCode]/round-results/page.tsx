@@ -37,6 +37,7 @@ import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
 import { ROUND_RESULTS_DURATION } from '@/lib/constants';
 import { soundManager } from '@/lib/sound';
+import { launchConfetti } from '@/lib/confetti';
 
 type WinningCaption = {
   id: string;
@@ -104,6 +105,9 @@ export default function RoundResultsPage() {
         setResults(resultsData as RoundResult);
         setIsLoading(false);
         
+        // Trigger celebratory confetti!
+        launchConfetti();
+        
         // Play round result sound when results are loaded
         if (soundManager) {
           soundManager.playRoundResult();
@@ -169,8 +173,8 @@ export default function RoundResultsPage() {
     if (!results || !results.winningCaptions || results.winningCaptions.length === 0) {
       return (
          <div className="absolute inset-x-0 bottom-0 bg-black/80 p-4 text-center">
-            <p className="text-xl font-semibold text-white">No votes this round!</p>
-            <p className="text-md text-muted-foreground mt-2">No points awarded.</p>
+            <p className="text-xl font-semibold text-white">DISQUALIFIED!</p>
+            <p className="text-md text-muted-foreground mt-2">The Olympic Committee found no worthy medalists this round.</p>
         </div>
       );
     }
@@ -183,7 +187,7 @@ export default function RoundResultsPage() {
       return (
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 pt-12 text-center">
             <p className="text-3xl font-bold text-white leading-tight drop-shadow-lg">"{winner.text}"</p>
-            <p className="text-lg text-accent mt-3 font-semibold">by {winner.authorName} (+{pointsAwarded} points)</p>
+            <p className="text-lg text-accent mt-3 font-semibold">GOLD MEDAL: {winner.authorName} (+{pointsAwarded} points)</p>
         </div>
       );
     }
@@ -192,9 +196,9 @@ export default function RoundResultsPage() {
     return (
       <div className="absolute inset-0 bg-black/80 p-4 flex flex-col justify-center items-center text-center">
         <h3 className="font-headline text-3xl text-yellow-400 font-bold tracking-wider animate-pulse">
-          IT'S A TIE!
+          PHOTO FINISH!
         </h3>
-        <p className="text-muted-foreground mb-4">{winningCaptions.length} players share the victory!</p>
+        <p className="text-muted-foreground mb-4">{winningCaptions.length} athletes tied for GOLD!</p>
         <div className="flex flex-wrap justify-center gap-4">
           {winningCaptions.map(winner => (
             <div key={winner.id} className="bg-black/50 p-3 rounded-lg max-w-xs">
@@ -204,17 +208,17 @@ export default function RoundResultsPage() {
           ))}
         </div>
         <p className="text-accent font-semibold mt-4 text-lg">
-          All winners get +{pointsAwarded} points!
+          All champions receive +{pointsAwarded} Olympic points!
         </p>
       </div>
     );
   };
 
   if (isLoading) {
-    return <div className="flex flex-col items-center justify-center min-h-screen"><Loader2 className="h-16 w-16 text-primary animate-spin mb-4" /><h1 className="font-headline text-3xl text-primary">Revealing the Winner...</h1></div>;
+    return <div className="flex flex-col items-center justify-center min-h-screen"><Loader2 className="h-16 w-16 text-primary animate-spin mb-4" /><h1 className="font-headline text-3xl text-primary">The Judges Are Deliberating...</h1></div>;
   }
   if (!results) {
-    return <div className="flex flex-col items-center justify-center min-h-screen"><h1 className="font-headline text-3xl text-destructive">Error Loading Results</h1><Button className="mt-4" onClick={() => window.location.reload()}>Refresh</Button></div>;
+    return <div className="flex flex-col items-center justify-center min-h-screen"><h1 className="font-headline text-3xl text-destructive">Olympic Scoring Error!</h1><Button className="mt-4" onClick={() => window.location.reload()}>Demand Recount</Button></div>;
   }
 
   return (
@@ -222,20 +226,20 @@ export default function RoundResultsPage() {
       <Card className="shadow-xl overflow-hidden card-jackbox border-2 border-primary/70">
         <CardHeader className="text-center bg-gradient-to-b from-primary/20 to-transparent pb-8">
           <CardTitle className="font-headline text-5xl text-primary flex items-center justify-center title-jackbox">
-            <Award className="mr-3 h-12 w-12" /> Round {results.currentRound} Results!
+            <Award className="mr-3 h-12 w-12" /> Event {results.currentRound} Medal Ceremony!
           </CardTitle>
-          <CardDescription className="text-lg">The votes are in!</CardDescription>
+          <CardDescription className="text-lg">The judges have made their decision!</CardDescription>
         </CardHeader>
         <CardContent className="p-6 space-y-8">
           <Card className="relative shadow-lg border-2 border-accent overflow-hidden min-h-[300px]">
-            <img src={results.memeUrl} alt="Winning meme" className="w-full h-full object-cover" />
+            <img src={results.memeUrl} alt="Medal-winning meme" className="w-full h-full object-cover" />
             {renderWinnerInfo()}
           </Card>
           <LeaderboardSnippet players={results.players} currentPlayerId={currentUserId || undefined} />
           <div className="text-center pt-4">
             <Button size="lg" onClick={handleNext} disabled={isNavigating.current} className="font-bold text-lg bg-primary hover:bg-primary/90 group btn-jackbox">
               {isNavigating.current && <Loader2 className="mr-2 h-5 w-5 animate-spin" />}
-              {results.currentRound < results.totalRounds ? 'Next Round' : 'View Final Results'}
+              {results.currentRound < results.totalRounds ? 'Next Olympic Event' : 'View Medal Count'}
               {!isNavigating.current && <ArrowRightCircle className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
             </Button>
           </div>

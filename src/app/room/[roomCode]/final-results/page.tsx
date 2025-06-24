@@ -1,7 +1,7 @@
 // FILE: /Users/harshkathiriya/Downloads/captionking-master/src/app/room/[roomCode]/final-results/page.tsx
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-room-channel';
 import { soundManager } from '@/lib/sound';
+import { launchFireworks } from '@/lib/confetti';
 
 type PlayerData = {
   id: string;
@@ -32,6 +33,9 @@ export default function FinalResultsPage() {
   const [isPlayingAgain, setIsPlayingAgain] = useState(false);
   const [isLeavingGame, setIsLeavingGame] = useState(false);
   
+  // Ref to store fireworks cleanup function
+  const fireworksCleanupRef = useRef<() => void>();
+  
   const overallWinner = players.length > 0 ? [...players].sort((a, b) => b.score - a.score)[0] : null;
 
   useEffect(() => {
@@ -51,6 +55,9 @@ export default function FinalResultsPage() {
         if (soundManager) {
           soundManager.playFinalResult();
         }
+
+        // Launch grand fireworks celebration!
+        fireworksCleanupRef.current = await launchFireworks();
       } catch (error: any) {
         toast({ title: "Error loading results", description: error.message, variant: "destructive" });
       } finally {
@@ -60,6 +67,13 @@ export default function FinalResultsPage() {
     
     fetchGameResults();
   }, [roomCode, toast]);
+
+  // Cleanup fireworks on unmount
+  useEffect(() => {
+    return () => {
+      fireworksCleanupRef.current?.();
+    };
+  }, []);
 
   const handlePlayAgain = async () => {
     if (!roomId || isPlayingAgain) return;
@@ -111,12 +125,12 @@ export default function FinalResultsPage() {
       soundManager.playButtonClick();
     }
     
-    const shareText = `I just played Caption Clash! ${overallWinner.name} won with ${overallWinner.score} points in room ${roomCode}!`;
+    const shareText = `I just competed in the LOLympics! ${overallWinner.name} won GOLD with ${overallWinner.score} points in country ${roomCode}!`;
     if (navigator.share) {
-      navigator.share({ title: 'Caption Clash Results', text: shareText, url: window.location.href });
+      navigator.share({ title: 'LOLympics Results', text: shareText, url: window.location.href });
     } else {
-      navigator.clipboard.writeText(`${shareText} Join the fun: ${window.location.origin}`);
-      toast({ title: "Results Copied!", description: "Share message copied to clipboard." });
+      navigator.clipboard.writeText(`${shareText} Join the hilarious competition: ${window.location.origin}`);
+      toast({ title: "Medal Ceremony Shared!", description: "Olympic results copied to clipboard." });
     }
   };
   
@@ -146,12 +160,12 @@ export default function FinalResultsPage() {
       <Card className="shadow-2xl overflow-hidden card-jackbox border-2 border-primary/70">
         <CardHeader className="text-center bg-gradient-to-b from-primary/30 to-transparent pb-10">
           <Trophy className="mx-auto h-24 w-24 text-yellow-400 animate-bounce" />
-          <CardTitle className="font-headline text-5xl text-primary mt-4 title-jackbox">Game Over!</CardTitle>
-          <CardDescription className="text-xl mt-2">And the Grand Champion is...</CardDescription>
+          <CardTitle className="font-headline text-5xl text-primary mt-4 title-jackbox">Closing Ceremony!</CardTitle>
+          <CardDescription className="text-xl mt-2">And the GOLD MEDAL goes to...</CardDescription>
           {overallWinner && (
             <>
               <p className="font-headline text-4xl text-accent mt-4 animate-pulse">{overallWinner.name}</p>
-              <p className="text-2xl text-muted-foreground">with {overallWinner.score} points!</p>
+              <p className="text-2xl text-muted-foreground">with a record-breaking {overallWinner.score} points!</p>
             </>
           )}
         </CardHeader>
@@ -159,15 +173,15 @@ export default function FinalResultsPage() {
           <FullLeaderboard players={players} />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-6">
             <Button size="lg" variant="outline" onClick={handleShare} disabled={!overallWinner} className="font-semibold btn-jackbox">
-              <Share2 className="mr-2 h-5 w-5" /> Share Results
+              <Share2 className="mr-2 h-5 w-5" /> Share Medal Ceremony
             </Button>
             <Button size="lg" variant="secondary" onClick={handlePlayAgain} disabled={isPlayingAgain} className="font-semibold btn-jackbox">
               {isPlayingAgain ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <RotateCcw className="mr-2 h-5 w-5" />}
-              Play Again
+              Next Olympics
             </Button>
             <Button size="lg" onClick={handleNewGame} disabled={isLeavingGame} className="font-semibold bg-accent hover:bg-accent/90 text-accent-foreground btn-jackbox">
               {isLeavingGame ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Home className="mr-2 h-5 w-5" />}
-              New Game
+              Olympic Village
             </Button>
           </div>
         </CardContent>

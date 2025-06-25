@@ -9,7 +9,7 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const TOAST_REMOVE_DELAY = 0
 
 type ToasterToast = ToastProps & {
   id: string
@@ -59,16 +59,21 @@ interface State {
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 const addToRemoveQueue = (toastId: string) => {
+  // Clear any pending timeout (safety)
   if (toastTimeouts.has(toastId)) {
+    clearTimeout(toastTimeouts.get(toastId)!)
+    toastTimeouts.delete(toastId)
+  }
+
+  // If delay is zero, remove synchronously; otherwise set a timeout.
+  if (TOAST_REMOVE_DELAY === 0) {
+    dispatch({ type: "REMOVE_TOAST", toastId })
     return
   }
 
   const timeout = setTimeout(() => {
     toastTimeouts.delete(toastId)
-    dispatch({
-      type: "REMOVE_TOAST",
-      toastId: toastId,
-    })
+    dispatch({ type: "REMOVE_TOAST", toastId })
   }, TOAST_REMOVE_DELAY)
 
   toastTimeouts.set(toastId, timeout)
@@ -186,8 +191,17 @@ function useToast() {
 
   return {
     ...state,
-    toast,
-    dismiss: (toastId?: string) => dispatch({ type: "DISMISS_TOAST", toastId }),
+    toast: React.useCallback((props: Toast) => {
+      // Apply default duration of 2 seconds if not specified
+      const toastWithDuration = {
+        ...props,
+        duration: props.duration ?? 2000,
+      };
+      return toast(toastWithDuration);
+    }, []),
+    dismiss: (toastId?: string) => {
+      dispatch({ type: "DISMISS_TOAST", toastId });
+    },
   }
 }
 

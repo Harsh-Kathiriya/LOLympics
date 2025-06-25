@@ -13,7 +13,7 @@ import React from 'react';
 export default function Particles() {
   return (
     <div className="absolute inset-0 -z-10 overflow-hidden">
-      {Array.from({ length: 20 }).map((_, i) => (
+      {Array.from({ length: 35 }).map((_, i) => (
         <div
           /* eslint-disable react/no-array-index-key */
           key={i}

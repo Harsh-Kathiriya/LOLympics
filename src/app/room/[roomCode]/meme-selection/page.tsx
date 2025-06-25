@@ -128,6 +128,11 @@ export default function MemeSelectionPage() {
       <div className="bg-background/60 backdrop-blur-sm rounded-xl p-6 border border-border/50 shadow-lg">
         {renderContent()}
       </div>
+
+      {/* Tenor attribution (required by Tenor Terms) */}
+      <p className="mt-4 text-center text-xs text-muted-foreground select-none">
+        Powered&nbsp;By&nbsp;Tenor
+      </p>
     </div>
   );
 }

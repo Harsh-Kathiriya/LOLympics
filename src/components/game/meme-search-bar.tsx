@@ -25,7 +25,7 @@ export function MemeSearchBar({
     <div className="mb-6 flex flex-col sm:flex-row gap-3">
       <Input 
         type="text"
-        placeholder="Search for memes (e.g., 'funny cat')"
+        placeholder="Search Tenor"
         value={searchTerm}
         onChange={(e) => onSearchTermChange(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && !disabled && onSearch()}

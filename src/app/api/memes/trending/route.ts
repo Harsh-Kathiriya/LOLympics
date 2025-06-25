@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { retryFetch } from '@/lib/retry-fetch';
 
 // This is the backend proxy route for fetching FEATURED memes from Tenor.
 // It forwards the request to the Tenor API and pipes the response back to the client.
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const tenorResponse = await fetch(featuredUrl.toString());
+    const tenorResponse = await retryFetch(featuredUrl.toString(), {}, 5);
 
     if (!tenorResponse.ok) {
       const errorData = await tenorResponse.json();

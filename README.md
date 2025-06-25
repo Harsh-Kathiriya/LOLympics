@@ -84,33 +84,29 @@ LOLympics takes players through a series of hilarious and competitive stages:
 
 
 
-## Database Schema (Supabase)
+## Database Architecture
 
-The database is designed to manage game rooms, players, rounds, captions, and votes.
+The database is designed to manage game rooms, players, rounds, captions, and votes with a focus on security, performance, and analytics.
+
+For a comprehensive overview of the database design including:
+- Complete schema design with table relationships
+- Security model with Row Level Security (RLS)
+- Database functions and stored procedures
+- Indexing strategy and performance optimizations
+- Data persistence and analytics capabilities
+
+See the detailed [Database Documentation](./sql/database.md).
 
 ### Key Tables:
 
 1.  **`rooms`**: Stores information about game rooms, including the unique `room_code`, `status` (`lobby`, `meme-selection`, etc.), and round tracking.
-2.  **`players`**: Contains details for each player, linked via `room_id`. Includes `username`, `is_ready`, `avatar_src`, and `current_score`. The `players.id` matches the user's `auth.uid()`.
+2.  **`players`**: Contains details for each player, linked via `room_id`. Includes `username`, `is_ready`, `avatar_src`, and `current_score`.
 3.  **`memes`**: A collection of memes used in the game, storing `image_url` and `name`.
 4.  **`rounds`**: Tracks individual rounds within a game room.
 5.  **`player_round_memes`**: Links each player to their selected meme for a specific round.
-6.  **`captions`**: Stores all submitted captions, linked to a `round_id` and `player_id`. Crucially, it includes `text_content`, `position_x`, and `position_y` coordinates.
+6.  **`captions`**: Stores all submitted captions, linked to a `round_id` and `player_id`. Includes `text_content`, `position_x`, and `position_y` coordinates.
 7.  **`votes`**: Records votes cast by players on captions.
-
-### Database Functions (RPCs)
-
-*   `create_room(p_username)`: Creates a new room and a player record for the host.
-*   `join_room(p_room_code, p_username)`: Adds a player to an existing room.
-*   `leave_room(p_room_id)`: Removes a player from a room.
-*   `start_game(p_room_code)`: Transitions the room state from `lobby` to `meme-selection` and creates the first round.
-*   `select_player_meme(p_round_id, p_meme_url, p_meme_name)`: Saves a player's individual meme choice for the round.
-*   `submit_caption(p_round_id, p_caption_text, p_position_x, p_position_y)`: Saves a player's caption and its position.
-*   `submit_caption_vote(p_caption_id)`: Records a player's vote for a caption.
-*   `tally_caption_votes_and_finalize_round(p_round_id)`: Tallies votes, awards points, and updates the room state to `round-results`.
-*   `get_round_results_details(p_round_id)`: Fetches all data needed for the round results page.
-*   `advance_to_next_round(p_room_id)`: Increments the round number or sets the game to finished.
-*   `reset_game(p_room_id)`: Resets scores and game state to allow playing again.
+8.  **`persistent_meme_selections`**: Analytics table that retains meme selection data for future game improvements.
 
 ## Real-time Communication Architecture (Ably)
 

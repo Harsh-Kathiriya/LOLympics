@@ -925,6 +925,25 @@ CREATE TABLE IF NOT EXISTS public.player_round_memes (
 CREATE INDEX IF NOT EXISTS idx_player_round_memes_round ON public.player_round_memes(round_id);
 CREATE INDEX IF NOT EXISTS idx_player_round_memes_player ON public.player_round_memes(player_id);
 
+-- New persistent table: stores player meme selections without CASCADE DELETE constraints
+-- This allows data to be retained even when rounds/players are deleted
+CREATE TABLE IF NOT EXISTS public.persistent_meme_selections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    round_id UUID NOT NULL,
+    player_id UUID NOT NULL,
+    meme_id UUID NOT NULL REFERENCES public.memes(id) ON DELETE SET NULL,
+    room_code TEXT NOT NULL,
+    username TEXT NOT NULL,
+    round_number INTEGER NOT NULL,
+    meme_url TEXT NOT NULL
+);
+
+-- Indexes for the persistent table
+CREATE INDEX IF NOT EXISTS idx_persistent_meme_selections_player ON public.persistent_meme_selections(player_id);
+CREATE INDEX IF NOT EXISTS idx_persistent_meme_selections_meme ON public.persistent_meme_selections(meme_id);
+CREATE INDEX IF NOT EXISTS idx_persistent_meme_selections_room ON public.persistent_meme_selections(room_code);
+
 -- 3. Row-Level Security for new table ----------------------------------
 ALTER TABLE public.player_round_memes ENABLE ROW LEVEL SECURITY;
 
@@ -979,6 +998,19 @@ USING (
     )
 );
 
+-- RLS for persistent meme selections table
+ALTER TABLE public.persistent_meme_selections ENABLE ROW LEVEL SECURITY;
+
+-- Allow anyone to view persistent meme selections (for analytics)
+CREATE POLICY "Anyone can view persistent meme selections"
+ON public.persistent_meme_selections FOR SELECT
+USING (true);
+
+-- Only allow system functions to insert into persistent meme selections
+CREATE POLICY "System functions can insert persistent meme selections"
+ON public.persistent_meme_selections FOR INSERT
+WITH CHECK (auth.uid() IS NOT NULL);
+
 -- 4. New RPC: select_player_meme ---------------------------------------
 CREATE OR REPLACE FUNCTION public.select_player_meme(
     p_round_id UUID,
@@ -993,13 +1025,21 @@ DECLARE
     v_user_id  UUID := auth.uid();
     v_room_id  UUID;
     v_meme_id  UUID;
+    v_room_code TEXT;
+    v_username TEXT;
+    v_round_number INTEGER;
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION 'User must be authenticated.';
     END IF;
 
     -- Validate round & room
-    SELECT room_id INTO v_room_id FROM public.rounds WHERE id = p_round_id;
+    SELECT r.room_id, r.round_number, rooms.room_code 
+    INTO v_room_id, v_round_number, v_room_code 
+    FROM public.rounds r
+    JOIN public.rooms ON rooms.id = r.room_id
+    WHERE r.id = p_round_id;
+    
     IF v_room_id IS NULL THEN
         RAISE EXCEPTION 'Round not found.';
     END IF;
@@ -1007,6 +1047,9 @@ BEGIN
     IF NOT public.is_player_in_room(v_user_id, v_room_id) THEN
         RAISE EXCEPTION 'Player is not in the specified room.';
     END IF;
+    
+    -- Get player username
+    SELECT username INTO v_username FROM public.players WHERE id = v_user_id;
 
     -- Upsert meme (ensures deduplication by URL)
     INSERT INTO public.memes (image_url, name)
@@ -1018,6 +1061,13 @@ BEGIN
     INSERT INTO public.player_round_memes (round_id, player_id, meme_id)
     VALUES (p_round_id, v_user_id, v_meme_id)
     ON CONFLICT (round_id, player_id) DO UPDATE SET meme_id = EXCLUDED.meme_id;
+    
+    -- Also insert into persistent meme selections table
+    INSERT INTO public.persistent_meme_selections (
+        round_id, player_id, meme_id, room_code, username, round_number, meme_url
+    ) VALUES (
+        p_round_id, v_user_id, v_meme_id, v_room_code, v_username, v_round_number, p_meme_url
+    );
 
     -- If everyone in the room has selected a meme, move to caption-entry
     IF (
@@ -1072,6 +1122,40 @@ SELECT cron.schedule(
     '0 0 */2 * *',
     $$ SELECT public.clean_old_memes(1000); $$
 );
+
+-- 6. Function to query persistent meme selections for analytics ---------
+CREATE OR REPLACE FUNCTION public.get_meme_selection_analytics(
+    p_days_back INTEGER DEFAULT 30,
+    p_limit INTEGER DEFAULT 100
+)
+RETURNS TABLE (
+    meme_url TEXT,
+    selection_count BIGINT,
+    distinct_players BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        pms.meme_url,
+        COUNT(*) as selection_count,
+        COUNT(DISTINCT pms.player_id) as distinct_players
+    FROM 
+        public.persistent_meme_selections pms
+    WHERE 
+        pms.created_at > NOW() - (p_days_back || ' days')::INTERVAL
+    GROUP BY 
+        pms.meme_url
+    ORDER BY 
+        selection_count DESC
+    LIMIT p_limit;
+END;
+$$;
+
+COMMENT ON FUNCTION public.get_meme_selection_analytics(INTEGER, INTEGER) IS 'Returns analytics on meme selections over a specified time period.';
 
 -- ================================================
 --  END OF FLOW UPDATE (v2)

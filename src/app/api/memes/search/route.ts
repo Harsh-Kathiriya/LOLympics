@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { retryFetch } from '@/lib/retry-fetch';
 
 // This is the backend proxy route for SEARCHING for memes on Tenor.
 // It receives a request with a search query from the client, forwards it to the Tenor API,
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const tenorResponse = await fetch(searchUrl.toString());
+    const tenorResponse = await retryFetch(searchUrl.toString(), {}, 5);
 
     if (!tenorResponse.ok) {
         const errorData = await tenorResponse.json();

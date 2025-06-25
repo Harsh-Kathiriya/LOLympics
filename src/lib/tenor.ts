@@ -17,8 +17,12 @@ export interface TenorMeme {
  * @returns A TenorMeme object.
  */
 function transformMeme(result: any): TenorMeme {
-  // Ensure we are accessing the correct media format property
-  const mediaFormat = result.media_formats?.gif || result.media?.[0]?.gif;
+  // Prefer the much smaller tinygif variant when available
+  const mediaFormat =
+    result.media_formats?.tinygif ||
+    result.media_formats?.gif ||
+    result.media?.[0]?.tinygif ||
+    result.media?.[0]?.gif;
   if (!mediaFormat) {
     console.warn('Meme result missing GIF format:', result);
     // Return a placeholder or skip this meme

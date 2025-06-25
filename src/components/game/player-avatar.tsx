@@ -10,12 +10,13 @@ interface PlayerAvatarProps {
   size?: 'sm' | 'md' | 'lg';
   dataAiHint?: string;
   isReady?: boolean;
+  compact?: boolean;
 }
 
 // Default avatar path if none is provided
 const DEFAULT_AVATAR = '/assets/avatars/eduardo.png';
 
-export function PlayerAvatar({ name, avatarUrl, size = 'md', dataAiHint = "person user", isReady }: PlayerAvatarProps) {
+export function PlayerAvatar({ name, avatarUrl, size = 'md', dataAiHint = "person user", isReady, compact = false }: PlayerAvatarProps) {
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -26,9 +27,9 @@ export function PlayerAvatar({ name, avatarUrl, size = 'md', dataAiHint = "perso
   };
 
   const avatarSizeClass = {
-    sm: 'h-8 w-8',
-    md: 'h-12 w-12',
-    lg: 'h-16 w-16',
+    sm: compact ? 'h-6 w-6' : 'h-8 w-8',
+    md: compact ? 'h-10 w-10' : 'h-12 w-12',
+    lg: compact ? 'h-14 w-14' : 'h-16 w-16',
   }[size];
   
   const textSizeClass = {
@@ -43,10 +44,26 @@ export function PlayerAvatar({ name, avatarUrl, size = 'md', dataAiHint = "perso
     lg: 'text-xl',
   }[size];
 
+  const checkmarkSizeClass = {
+    sm: 'h-4 w-4 p-0.5',
+    md: 'h-5 w-5 p-0.5',
+    lg: 'h-6 w-6 p-0.5',
+  }[size];
+
   return (
-    <div className="flex items-center space-x-3">
+    <div className={cn(
+      "flex items-center", 
+      compact ? "space-x-1" : "space-x-3"
+    )}>
       <div className="relative">
-        <Avatar className={cn(avatarSizeClass, "border-2", isReady ? 'border-green-500' : 'border-primary/50')} data-ai-hint={dataAiHint}>
+        <Avatar 
+          className={cn(
+            avatarSizeClass, 
+            "border-2", 
+            isReady ? 'border-green-500' : 'border-primary/50'
+          )} 
+          data-ai-hint={dataAiHint}
+        >
           <AvatarImage 
             src={avatarUrl || DEFAULT_AVATAR} 
             alt={name} 
@@ -55,9 +72,20 @@ export function PlayerAvatar({ name, avatarUrl, size = 'md', dataAiHint = "perso
             {getInitials(name)}
           </AvatarFallback>
         </Avatar>
-        {isReady && <CheckCircle className="absolute bottom-0 right-0 h-5 w-5 bg-background text-green-500 rounded-full p-0.5" />}
+        {isReady && (
+          <CheckCircle 
+            className={cn(
+              "absolute bottom-0 right-0 bg-background text-green-500 rounded-full",
+              checkmarkSizeClass
+            )} 
+          />
+        )}
       </div>
-      <span className={cn("font-medium font-headline text-foreground", textSizeClass)}>{name}</span>
+      {!compact && (
+        <span className={cn("font-medium font-headline text-foreground", textSizeClass)}>
+          {name}
+        </span>
+      )}
     </div>
   );
 }

@@ -23,12 +23,11 @@ export enum RoomEvent {
   PLAYER_NAME_UPDATE = 'player-name-update',
   GAME_STARTING = 'game-starting',
   GAME_PHASE_CHANGED = 'game-phase-changed',
-  MEME_SELECTED = 'meme-selected-for-round',
+  MEME_SELECTED = 'meme-selected',
   CAPTION_SUBMITTED = 'caption-submitted',
   ROUND_RESULTS_READY = 'round-results-ready',
   FINAL_RESULTS = 'final-results',
   PLAYER_AVATAR_CHANGED = 'player-avatar-changed',
-  MEME_VOTE_CAST = 'meme-vote-cast', 
   CAPTION_VOTE_CAST = 'caption-vote-cast',
   
   
@@ -42,7 +41,6 @@ export interface PlayerNameUpdatePayload { playerId: string; newName: string; }
 export interface GamePhaseChangedPayload { phase: string; data?: Record<string, any>; }
 export interface PlayerAvatarChangedPayload { playerId: string; avatarSrc: string; }
 // CHANGED: The payload now clearly indicates who voted.
-export interface MemeVoteCastPayload { voterPlayerId: string; votedForCandidateId: string; }
 export interface CaptionVoteCastPayload { voterPlayerId: string; votedForCaptionId: string; }
 
 
@@ -51,7 +49,7 @@ export interface CaptionVoteCastPayload { voterPlayerId: string; votedForCaption
 export interface RoomPresenceData { status: 'online' | 'away' | 'idle'; isReady?: boolean; lastActivity?: number; avatarSrc?: string; playerId?: string; playerName?: string; }
 
 /** A union type for all possible event payloads. */
-export type RoomEventPayload = | PlayerJoinedPayload | PlayerLeftPayload | PlayerReadyUpdatePayload | GamePhaseChangedPayload | PlayerAvatarChangedPayload | MemeVoteCastPayload | PlayerNameUpdatePayload | CaptionVoteCastPayload;
+export type RoomEventPayload = | PlayerJoinedPayload | PlayerLeftPayload | PlayerReadyUpdatePayload | GamePhaseChangedPayload | PlayerAvatarChangedPayload | PlayerNameUpdatePayload | CaptionVoteCastPayload;
 
 /** The return type of the `useRoomChannel` hook, defining what it provides to components. */
 export interface UseRoomChannelResult { 

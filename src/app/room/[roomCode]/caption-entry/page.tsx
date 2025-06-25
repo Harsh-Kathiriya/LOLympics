@@ -4,20 +4,21 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { TimerBar } from '@/components/game/timer-bar';
 import { CaptionInput } from '@/components/game/caption-input';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
-import { Loader2 } from 'lucide-react';
+import { Loader2, PencilLine } from 'lucide-react';
 import { CAPTION_ENTRY_DURATION } from '@/lib/constants';
+import { useRoomInfo } from '@/hooks/use-room-info';
 
 /**
  * CaptionEntryPage Component
  * 
  * This page handles the caption entry phase of the game. Its responsibilities are:
- * 1. Fetching the winning meme that was selected in the previous phase (`meme-voting`).
+ * 1. Fetching the player's selected meme for the current round.
  * 2. Displaying a timer and an input field for the player to write their caption.
- * 3. Submitting the player's caption to the database.
- * 4. Navigating the player to the next phase (`caption-voting`) immediately after submission or when the timer runs out.
+ * 3. Allowing the player to position their caption on the meme.
+ * 4. Submitting the player's caption and position to the database.
+ * 5. Navigating the player to the next phase (`caption-voting`) immediately after submission or when the timer runs out.
  * 
  * This page operates without real-time Ably events. The synchronization of players
  * is handled by a "waiting room" on the subsequent `caption-voting` page.
@@ -27,6 +28,7 @@ export default function CaptionEntryPage() {
   const roomCode = params.roomCode as string;
   const router = useRouter();
   const { toast } = useToast();
+  const { roomInfo, isRoomInfoLoading } = useRoomInfo(roomCode);
 
   // UI state: true while fetching the initial round data.
   const [isLoading, setIsLoading] = useState(true);
@@ -36,9 +38,48 @@ export default function CaptionEntryPage() {
   const [roundId, setRoundId] = useState<string | null>(null);
   // State for the URL of the meme to be captioned.
   const [memeUrl, setMemeUrl] = useState<string>('');
+  // State to track if we're waiting for all players to select their memes
+  const [isWaitingForPlayers, setIsWaitingForPlayers] = useState(true);
 
-  // Step 1: Fetch the current round's winning meme to be captioned.
+  // Step 1: Check room status and wait for all players to select their memes
   useEffect(() => {
+    if (isRoomInfoLoading || !roomInfo) return;
+
+    // If room status is not 'caption-entry', we're still waiting for players
+    if (roomInfo.status !== 'caption-entry') {
+      setIsWaitingForPlayers(true);
+      
+      // Set up polling to check room status
+      const intervalId = setInterval(async () => {
+        try {
+          const { data, error } = await supabase
+            .from('rooms')
+            .select('status')
+            .eq('room_code', roomCode)
+            .single();
+            
+          if (error) throw error;
+          
+          if (data && data.status === 'caption-entry') {
+            setIsWaitingForPlayers(false);
+            clearInterval(intervalId);
+          }
+        } catch (error) {
+          console.error("Error checking room status:", error);
+        }
+      }, 2000);
+      
+      return () => clearInterval(intervalId);
+    } else {
+      setIsWaitingForPlayers(false);
+    }
+  }, [roomInfo, isRoomInfoLoading, roomCode]);
+
+  // Step 2: Fetch the current round's winning meme to be captioned.
+  useEffect(() => {
+    // Only fetch round info if we're not waiting for players
+    if (isWaitingForPlayers) return;
+    
     const fetchRoundInfo = async () => {
       // First, get the room's UUID from its more user-friendly room_code.
       const { data: roomData, error: roomError } = await supabase
@@ -56,7 +97,7 @@ export default function CaptionEntryPage() {
       const roomId = roomData.id;
 
       // Now, get the current round info using the room's UUID.
-      // This RPC fetches the active round ID and the corresponding meme's URL.
+      // This RPC fetches the active round ID and the player's selected meme URL.
       const { data: roundInfo, error: roundInfoError } = await supabase.rpc('get_current_round_info', {
         p_room_id: roomId
       });
@@ -78,7 +119,7 @@ export default function CaptionEntryPage() {
     if (roomCode) {
       fetchRoundInfo();
     }
-  }, [roomCode, router, toast]);
+  }, [roomCode, router, toast, isWaitingForPlayers]);
 
   /**
    * Called by the TimerBar component when the countdown reaches zero.
@@ -96,16 +137,20 @@ export default function CaptionEntryPage() {
   /**
    * Handles the user submitting their caption.
    * @param caption The text content of the caption from the CaptionInput component.
+   * @param positionX The horizontal position (0-100) of the caption on the meme.
+   * @param positionY The vertical position (0-100) of the caption on the meme.
    */
-  const handleSubmitCaption = async (caption: string) => {
+  const handleSubmitCaption = async (caption: string, positionX: number, positionY: number) => {
     if (!roundId || isSubmitting) return;
 
     setIsSubmitting(true);
     try {
-      // This RPC securely saves the caption to the database.
+      // This RPC securely saves the caption to the database with position information.
       const { error } = await supabase.rpc('submit_caption', {
         p_round_id: roundId,
         p_caption_text: caption,
+        p_position_x: positionX,
+        p_position_y: positionY
       });
 
       if (error) throw error;
@@ -129,33 +174,49 @@ export default function CaptionEntryPage() {
     }
   };
 
+  // While waiting for all players to select their memes
+  if (isWaitingForPlayers) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
+        <Loader2 className="h-16 w-16 text-primary animate-spin mb-4" />
+        <h1 className="font-headline text-3xl text-primary">Waiting for Players</h1>
+        <p className="text-muted-foreground mt-2">Waiting for all players to select their memes...</p>
+      </div>
+    );
+  }
+
   // While fetching initial data, show a loading screen.
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)]">
           <Loader2 className="h-16 w-16 text-primary animate-spin mb-4" />
           <h1 className="font-headline text-3xl text-primary">Loading Round</h1>
-          <p className="text-muted-foreground mt-2">Getting the winning meme ready...</p>
+          <p className="text-muted-foreground mt-2">Getting your meme ready...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
-      <Card className="shadow-xl card-jackbox border-2 border-primary/70">
-        <CardHeader className="text-center">
-          <CardTitle className="font-headline text-4xl text-primary title-jackbox">Caption This Meme!</CardTitle>
-          <CardDescription>Write your funniest caption. You have {CAPTION_ENTRY_DURATION} seconds!</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <TimerBar durationSeconds={CAPTION_ENTRY_DURATION} onTimeUp={handleTimeUp} className="mb-6" />
-          <CaptionInput 
-            onSubmit={handleSubmitCaption} 
-            memeImageUrl={memeUrl}
-            isSubmitting={isSubmitting}
-          />
-        </CardContent>
-      </Card>
+    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      {/* Header Section */}
+      <div className="text-center mb-8">
+        <h1 className="font-headline text-5xl text-primary title-jackbox mb-2">Craft Your LOLympic Caption!</h1>
+        <p className="text-muted-foreground text-lg mb-6">Type your wittiest line and drag it into place. You have {CAPTION_ENTRY_DURATION} seconds to impress the judges!</p>
+        
+        {/* Timer Bar - No box around it */}
+        <div className="max-w-3xl mx-auto mb-8">
+          <TimerBar durationSeconds={CAPTION_ENTRY_DURATION} onTimeUp={handleTimeUp} />
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="bg-background/60 backdrop-blur-sm rounded-xl p-6 border border-border/50 shadow-lg max-w-4xl mx-auto">
+        <CaptionInput 
+          onSubmit={handleSubmitCaption} 
+          memeImageUrl={memeUrl}
+          isSubmitting={isSubmitting}
+        />
+      </div>
     </div>
   );
 }

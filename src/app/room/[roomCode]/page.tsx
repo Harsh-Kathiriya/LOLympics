@@ -39,7 +39,8 @@ import { MIN_PLAYERS_TO_START } from '@/lib/constants';
 import { soundManager } from '@/lib/sound';
 
 // Configuration constants for avatar management and game rules
-const AVATAR_BASE_PATH = '/public/assets/avatars/';
+// Static assets in Next.js are served from the project root ("/"), so don't prefix with "/public".
+const AVATAR_BASE_PATH = '/assets/avatars/';
 const DEFAULT_AVATAR_FILE = 'eduardo.png';
 const DEFAULT_AVATAR_SRC = `${AVATAR_BASE_PATH}${DEFAULT_AVATAR_FILE}`;
 
@@ -126,7 +127,7 @@ export default function LobbyPage() {
         const transformedPlayers = playersData.map(player => ({
           id: player.id,
           name: player.username,
-          avatarUrl: player.avatar_src || DEFAULT_AVATAR_SRC,
+          avatarUrl: (player.avatar_src || DEFAULT_AVATAR_SRC).replace('/public', ''),
           isReady: !!player.is_ready, // Ensure boolean
           isCurrentUser: player.id === session.user.id,
         }));

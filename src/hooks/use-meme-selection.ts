@@ -47,9 +47,21 @@ export function useMemeSelection({
     if (!roomId || hasSubmitted) return false;
 
     try {
-      const { error } = await supabase.rpc('propose_meme', {
-        p_room_id: roomId,
-        p_round_number: roundNumber,
+      // Get the current round ID for the room
+      const { data: roundData, error: roundError } = await supabase
+        .from('rounds')
+        .select('id')
+        .eq('room_id', roomId)
+        .eq('round_number', roundNumber)
+        .single();
+
+      if (roundError || !roundData) {
+        throw new Error('Could not find the current round');
+      }
+
+      // Use the new select_player_meme function
+      const { error } = await supabase.rpc('select_player_meme', {
+        p_round_id: roundData.id,
         p_meme_url: memeToSubmit.url,
         p_meme_name: memeToSubmit.name
       });
@@ -60,7 +72,7 @@ export function useMemeSelection({
       return true;
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      console.error('Error proposing meme:', error);
+      console.error('Error selecting meme:', error);
       toast({
         title: "Submission Failed",
         description: errorMessage || "Could not submit your meme. Please try again.",
@@ -114,7 +126,8 @@ export function useMemeSelection({
         });
         setIsNavigating(true);
         setTimeout(() => {
-          router.push(`/room/${roomCode}/meme-voting`);
+          // Go directly to caption-entry instead of meme-voting
+          router.push(`/room/${roomCode}/caption-entry`);
         }, 1500);
       }
     }
@@ -158,10 +171,9 @@ export function useMemeSelection({
       }
     }
     
-    // TODO: This navigation will eventually be driven by a real-time Ably event.
-    // A delay is added to allow the user to see any final toasts.
+    // Go directly to caption-entry instead of meme-voting
     setTimeout(() => {
-      router.push(`/room/${roomCode}/meme-voting`);
+      router.push(`/room/${roomCode}/caption-entry`);
     }, 1500);
   }, [hasSubmitted, isNavigating, selectedMemeId, memes, submitMeme, router, roomCode, toast]);
 

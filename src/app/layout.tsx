@@ -27,8 +27,35 @@ const sourceCodePro = Source_Code_Pro({
 });
 
 export const metadata: Metadata = {
-  title: 'LOLympics',
-  description: 'A crazy multiplayer meme competition for the gold medal of comedy!',
+  title: {
+    default: 'LOLympics | Caption King',
+    template: '%s | LOLympics',
+  },
+  description: 'LOLympics is a fast-paced multiplayer meme-caption game. Compete with friends, create the funniest captions, and climb the leaderboard to take the comedy gold!',
+  keywords: [
+    'meme game',
+    'multiplayer meme',
+    'caption contest',
+    'party game',
+    'online meme caption',
+    'LOLympics',
+  ],
+  authors: [{ name: 'LOLympics Team', url: 'https://lolympics.games' }],
+  generator: 'Next.js',
+  applicationName: 'LOLympics',
+  metadataBase: new URL('https://lolympics.games'),
+  openGraph: {
+    title: 'LOLympics – Multiplayer Meme Caption Game',
+    description: 'Create hilarious captions, vote for the best, and win gold in this real-time meme competition!',
+    url: 'https://lolympics.games',
+    siteName: 'LOLympics',
+    locale: 'en_US',
+    type: 'website',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({

@@ -117,20 +117,35 @@ export default function FinalResultsPage() {
     }
   };
 
-  const handleShare = () => {
+  const handleShare = async () => {
     if (!overallWinner) return;
-    
+
     // Play button click sound
     if (soundManager) {
       soundManager.playButtonClick();
     }
-    
+
     const shareText = `I just competed in the LOLympics! ${overallWinner.name} won GOLD with ${overallWinner.score} points in country ${roomCode}!`;
+
     if (navigator.share) {
-      navigator.share({ title: 'LOLympics Results', text: shareText, url: window.location.href });
+      try {
+        await navigator.share({
+          title: 'LOLympics Results',
+          text: shareText,
+          url: window.location.href,
+        });
+        // Optional success toast (only shows if user completes share)
+        toast({ title: 'Medal Ceremony Shared!', description: 'Spread the laughs with your friends!' });
+      } catch (error: any) {
+        // Ignore user-initiated cancelation; log other errors
+        if (error?.name !== 'AbortError') {
+          console.error('Share failed:', error);
+          toast({ title: 'Share Failed', description: 'Could not share results.', variant: 'destructive' });
+        }
+      }
     } else {
       navigator.clipboard.writeText(`${shareText} Join the hilarious competition: ${window.location.origin}`);
-      toast({ title: "Medal Ceremony Shared!", description: "Olympic results copied to clipboard." });
+      toast({ title: 'Medal Ceremony Shared!', description: 'Olympic results copied to clipboard.' });
     }
   };
   

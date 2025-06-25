@@ -33,10 +33,9 @@ class SoundManager {
   private soundEffectsCache: Map<string, HTMLAudioElement> = new Map();
   
   private constructor() {
-    // Initialize in client-side only
     if (typeof window !== 'undefined') {
       this.loadSettings();
-      this.setupBackgroundMusic();
+      // Do NOT create audio assets here to avoid large network hits at first paint.
     }
   }
   
@@ -69,17 +68,12 @@ class SoundManager {
     }
   }
   
-  // Setup background music
-  private setupBackgroundMusic(): void {
-    if (typeof window !== 'undefined') {
+  // Lazily instantiate the background Audio element
+  private ensureBackgroundAudio(): void {
+    if (!this.backgroundMusic && typeof window !== 'undefined') {
       this.backgroundMusic = new Audio(SOUNDS.BACKGROUND_MUSIC);
       this.backgroundMusic.loop = true;
       this.backgroundMusic.volume = this.volume;
-      
-      // If music was enabled in settings, start playing
-      if (this.musicEnabled) {
-        this.playBackgroundMusic();
-      }
     }
   }
   
@@ -109,11 +103,12 @@ class SoundManager {
   
   // Play background music
   public playBackgroundMusic(): void {
-    if (!this.musicEnabled || !this.backgroundMusic || typeof window === 'undefined') return;
-    
+    if (!this.musicEnabled || typeof window === 'undefined') return;
+
+    this.ensureBackgroundAudio();
+
     try {
-      // Only play if not already playing
-      if (this.backgroundMusic.paused) {
+      if (this.backgroundMusic && this.backgroundMusic.paused) {
         this.backgroundMusic.play().catch(err => console.error('Error playing background music:', err));
       }
     } catch (error) {

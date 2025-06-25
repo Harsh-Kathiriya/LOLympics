@@ -1,9 +1,8 @@
 "use client";
 
 import { useParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { TimerBar } from '@/components/game/timer-bar';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ImageIcon, Shuffle } from 'lucide-react';
 
 // Import custom hooks
 import { useMemeSearch } from '@/hooks/use-meme-search';
@@ -113,18 +112,22 @@ export default function MemeSelectionPage() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto py-8">
-      <Card className="shadow-2xl card-jackbox border-2 border-primary/70">
-        <CardHeader className="text-center border-b-2 border-border pb-6">
-          <CardTitle className="font-headline text-5xl text-primary title-jackbox">Select a Meme</CardTitle>
-          <CardDescription className="font-body text-lg">Choose a meme for this round. You have {MEME_SELECTION_DURATION} seconds!</CardDescription>
-        </CardHeader>
-        <CardContent className="pt-6">
-          {/* Timer bar is always visible for the phase */}
-          <TimerBar durationSeconds={MEME_SELECTION_DURATION} onTimeUp={handleTimeUp} className="mb-8" />
-          {renderContent()}
-        </CardContent>
-      </Card>
+    <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+      {/* Header Section */}
+      <div className="text-center mb-8">
+        <h1 className="font-headline text-5xl text-primary title-jackbox mb-2">Pick Your LOLympic Meme</h1>
+        <p className="text-muted-foreground text-lg mb-6">Choose a meme for this round. You've got {MEME_SELECTION_DURATION} seconds before the buzzer!</p>
+        
+        {/* Timer Bar - No box around it */}
+        <div className="max-w-3xl mx-auto mb-8">
+          <TimerBar durationSeconds={MEME_SELECTION_DURATION} onTimeUp={handleTimeUp} />
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="bg-background/60 backdrop-blur-sm rounded-xl p-6 border border-border/50 shadow-lg">
+        {renderContent()}
+      </div>
     </div>
   );
 }

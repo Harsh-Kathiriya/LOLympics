@@ -24,9 +24,9 @@ export function MemeCard({
   children,
 }: MemeCardProps) {
   return (
-    <Card 
+    <Card
       className={cn(
-        "overflow-hidden transition-all duration-200 ease-in-out cursor-pointer hover:shadow-accent/50 hover:scale-105",
+        "group overflow-hidden transition-all duration-200 ease-in-out cursor-pointer hover:shadow-accent/50 hover:scale-105",
         isSelected ? "ring-4 ring-accent shadow-accent/70 scale-105" : "shadow-lg",
         className
       )}
@@ -37,9 +37,11 @@ export function MemeCard({
           src={memeUrl}
           alt={altText}
           fill
-          className="object-cover"
+          priority={false}
+          className="object-contain bg-background"
           data-ai-hint={dataAiHint}
         />
+
         {children}
       </CardContent>
     </Card>

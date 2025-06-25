@@ -5,18 +5,18 @@ A crazy multiplayer meme competition where athletes compete to win gold medals w
 ## Core Technologies
 
 *   **Frontend:** Next.js (App Router), React, TypeScript, Tailwind CSS
-*   **Real-time:** Ably (for future integration)
-*   **Backend & Database:** Supabase (for future integration)
-*   **UI Components:** Shadcn/ui (inferred), Lucide Icons
+*   **Real-time:** Ably
+*   **Backend & Database:** Supabase
+*   **UI Components:** Shadcn/ui, Lucide Icons
 
 ## Key Features (Current & Planned)
 
 *   Create and join Olympic villages (game rooms).
 *   Real-time Olympic village with athlete ready-up status.
 *   Customizable athlete profiles with avatar selection.
-*   (Planned) Meme battleground selection phase.
-*   (Planned) Caption submission phase.
-*   (Planned) Caption judging phase.
+*   Individual meme selection for each player.
+*   Positioned caption submission with drag-and-drop placement.
+*   Caption judging phase with visual context.
 *   (Planned) Medal ceremonies and final Olympic rankings.
 *   (Planned) Real-time updates for all Olympic events.
 
@@ -40,54 +40,45 @@ LOLympics takes athletes through a series of hilarious and competitive stages:
         *   The games automatically start when all athletes are ready.
         *   A countdown initiates the games start, and all athletes are transitioned to the first event simultaneously (state transition managed by Supabase and communicated via Ably).
 
-3.  **Meme Proposal (`/room/[roomCode]/meme-selection`)**
-    *   **Action:** Each athlete finds and proposes one meme for the event.
+3.  **Meme Selection (`/room/[roomCode]/meme-selection`)**
+    *   **Action:** Each athlete selects a personal meme for the round.
     *   **Functionality:**
         *   Athletes can search the Tenor API for GIFs or use the trending memes provided.
-        *   Each athlete selects one meme. This choice is recorded as a `meme_candidate` in the database via the `propose_meme` function.
+        *   Each athlete selects one meme for themselves. This choice is recorded in the `player_round_memes` table via the `select_player_meme` function.
         *   A timer keeps the event moving. If an athlete doesn't choose, a random meme is submitted for them when time expires.
-        *   Once the timer ends, all athletes are navigated to the voting page.
+        *   Once all athletes have selected their memes (or the timer ends), the room automatically advances to the caption entry phase.
 
-4.  **Meme Voting (`/room/[roomCode]/meme-voting`)**
-    *   **Action:** Athletes vote on the collection of proposed memes.
+4.  **Caption Entry (`/room/[roomId]/caption-entry`)**
+    *   **Action:** Athletes submit captions for their selected meme with precise positioning.
     *   **Functionality:**
-        *   The page waits until all athletes have submitted their proposals, then displays all candidate memes.
-        *   Athletes cast one vote for their favorite meme (they cannot vote for their own). Votes are recorded via the `vote_for_meme_candidate` function.
-        *   Vote counts are updated and displayed to all athletes in real-time using Ably.
-        *   When the timer ends or all votes are cast, the `tally_votes_and_create_round` function is triggered. This function determines the winner, creates the official `round` in the database, and updates the village's status.
-        *   A `GAME_PHASE_CHANGED` event is broadcast via Ably, navigating all athletes simultaneously to the caption entry page.
-        *   Ties are broken randomly by the database function.
+        *   Each athlete's chosen meme is displayed prominently.
+        *   Athletes have a text input field to write their caption and can drag it to position it perfectly on their meme.
+        *   The caption's position (X/Y coordinates) is saved along with the text.
+        *   Submitted captions are sent to Supabase and associated with the athlete and the current round. Ably is used to show progress (e.g., "X athletes have submitted").
 
-5.  **Caption Entry (`/room/[roomId]/caption-entry`)**
-    *   **Action:** Athletes submit their gold-medal-worthy captions for the selected meme.
-    *   **Functionality:**
-        *   The chosen meme for the event is displayed prominently.
-        *   Athletes have a text input field to write and submit their caption within a time limit.
-        *   Submitted captions are sent to Supabase and associated with the athlete and the current event. Ably might be used to show progress (e.g., "X athletes have submitted").
-
-6.  **Caption Voting (`/room/[roomCode]/caption-voting`)**
+5.  **Caption Voting (`/room/[roomCode]/caption-voting`)**
     *   **Action:** Athletes judge the captions and vote for the one they find the funniest (they cannot vote for their own).
     *   **Functionality:**
-        *   All submitted captions for the event are displayed anonymously (or attributed after voting).
+        *   Athletes see each player's selected meme with their caption positioned exactly as specified.
         *   Athletes click to cast their vote for one caption.
-        *   Votes are recorded in Supabase. Real-time vote counts could be shown via Ably.
+        *   Votes are recorded in Supabase. Real-time vote counts are shown via Ably.
         *   A timer controls the judging period.
 
-7.  **Event Results (`/room/[roomId]/round-results`)**
+6.  **Event Results (`/room/[roomId]/round-results`)**
     *   **Action:** The gold medal caption for the event is revealed, and scores are updated.
     *   **Functionality:**
-        *   The meme is displayed along with the winning caption and its creator.
-        *   Scores for the event are shown (e.g., points for the gold medal caption, points for votes on the winner).
-        *   Overall scores or world rankings might be displayed (data from Supabase).
+        *   The winning captions are displayed on their respective memes with proper positioning.
+        *   Scores for the event are shown (e.g., points for the gold medal caption).
+        *   Overall scores and rankings are displayed (data from Supabase).
 
-8.  **Closing Ceremony (`/room/[roomId]/final-results`)**
+7.  **Closing Ceremony (`/room/[roomId]/final-results`)**
     *   **Action:** After a set number of events, the final Olympic results and the ultimate LOLympics champion are announced.
     *   **Functionality:**
         *   Displays final scores and rankings.
         *   Option to compete again or return to the homepage.
 
-9.  **Event Loop / Games End**
-    *   After **Event Results** athletes are sent back to **Meme Proposal** to start the next event. This repeats until `rooms.current_round_number === rooms.total_rounds`.
+8.  **Event Loop / Games End**
+    *   After **Event Results** athletes are sent back to **Meme Selection** to start the next event. This repeats until `rooms.current_round_number === rooms.total_rounds`.
     *   Athletes can increase `total_rounds` from the settings dialog at any time while in the village (or between events). The change is persisted to the `rooms` table and broadcast to all athletes.
 
 ## Project Status
@@ -99,15 +90,18 @@ LOLympics takes athletes through a series of hilarious and competitive stages:
     *   Ready state toggling
     *   Avatar customization and name changing
     *   Countdown to game start when all athletes are ready
-*   **Meme Proposal and Voting Flow is Implemented:**
-    *   Athletes can successfully search for and propose memes from the Tenor API.
-    *   The game correctly waits for all proposals before starting the voting phase.
-    *   Athletes can vote for their favorite meme.
-    *   Vote counts are displayed and updated in real-time.
-    *   The backend correctly determines a winning meme, creates a new round, and synchronizes all athletes to the next game phase.
-*   Real-time communication with Ably is properly set up and working for all village and meme-voting features.
+*   **Individual Meme Selection Flow:**
+    *   Athletes can successfully search for and select their personal meme from the Tenor API.
+    *   The game automatically advances to caption entry once all athletes have chosen.
+*   **Caption Positioning:**
+    *   Caption entry UI includes drag-and-drop positioning.
+    *   X/Y coordinates are stored in the database for accurate display.
+    *   Captions are displayed at their exact positions on memes in all game phases.
+*   **Caption Voting & Results:**
+    *   Caption voting displays each player's selected meme with positioned captions.
+    *   Round results show winning captions positioned on their respective memes.
+*   Real-time communication with Ably is properly set up and working for all game features.
 *   Core UI components for the game are created and styled.
-*   Game phases beyond meme voting (captioning, caption voting, results) have placeholder UI but require full implementation with backend services.
 
 ## Database Schema (Supabase)
 
@@ -115,24 +109,24 @@ The backend database is powered by Supabase. The schema is designed to manage ga
 
 ### Key Tables:
 
-1.  **`rooms`**: Stores information about game rooms, including the unique `country_code`, `total_rounds` (default **5**), `current_round_number`, `game_state` JSON and `status` (`lobby`, `in_progress`, `finished`).
+1.  **`rooms`**: Stores information about game rooms, including the unique `country_code`, `total_rounds` (default **5**), `current_round_number`, `game_state` JSON and `status` (`lobby`, `meme-selection`, `caption-entry`, `caption-voting`, `round-results`, `finished`).
 2.  **`athletes`**: Contains details for each athlete. The `athletes.id` is expected to match the `auth.uid()` derived from the JWT. Includes `room_id` (linking to the current room), `username`, `is_ready` status, `avatar_url` for athlete's chosen avatar, and `current_score`.
 3.  **`memes`**: A collection of memes available for the game, primarily storing `image_url` and `name`.
-4.  **`rounds`**: Tracks individual rounds within a game room, linking to the `room_id` and `meme_id` used for the round. Also stores the `winning_caption_id` once determined.
-5.  **`captions`**: Stores all captions submitted by athletes, linked to the `round_id` and `athlete_id`. Includes `text_content` for the caption.
-6.  **`meme_candidates`**: Holds the list of memes proposed for a round (`round_id`, `meme_id`, `submitted_by_athlete_id`).
-7.  **`meme_candidate_votes`**: Stores votes on the proposed memes (`meme_candidate_id`, `voter_athlete_id`).
-8.  **`votes`** *(caption votes)*: Records votes cast by athletes on captions, linking to the `caption_id` and `voter_athlete_id`.
+4.  **`rounds`**: Tracks individual rounds within a game room, linked to the `room_id`. Also stores the `winning_caption_id` once determined.
+5.  **`player_round_memes`**: Links each player to their selected meme for a specific round (`round_id`, `player_id`, `meme_id`).
+6.  **`captions`**: Stores all captions submitted by athletes, linked to the `round_id` and `athlete_id`. Includes `text_content` for the caption, plus `position_x` and `position_y` coordinates (0-100 range) for precise placement on the meme.
+7.  **`votes`** *(caption votes)*: Records votes cast by athletes on captions, linking to the `caption_id` and `voter_athlete_id`.
 
 ### Database Functions (RPCs)
 
 The game logic is orchestrated through several key PostgreSQL functions, which are called as RPCs from the client.
 
 *   `start_game(p_country_code)`: Called by clients when the village countdown ends. It's idempotent, checking the room status to ensure it only runs once. It transitions the room state to `meme-selection`.
-*   `propose_meme(p_room_id, p_round_number, p_meme_url, p_meme_name)`: Called by an athlete to submit a meme candidate for the current round.
-*   `vote_for_meme_candidate(p_meme_candidate_id)`: Called by an athlete to cast their vote for one of the proposed memes. Includes logic to prevent voting for one's own meme and voting multiple times.
-*   `tally_votes_and_create_round(p_room_id, p_round_number)`: Called by clients when the meme voting timer ends. It tallies the votes, selects a winning meme (randomly resolving ties), creates the official entry in the `rounds` table, and updates the room status to `caption-entry`.
-*   `get_meme_candidates_for_round(p_room_id, p_round_number)`: A helper function to fetch all proposed memes for a given round, along with the submitters' names.
+*   `select_player_meme(p_round_id, p_meme_url, p_meme_name)`: Called by an athlete to select their personal meme for the current round. When all players have selected, automatically advances the room to `caption-entry` status.
+*   `submit_caption(p_round_id, p_caption_text, p_position_x, p_position_y)`: Called by an athlete to submit their caption with positioning information.
+*   `submit_caption_vote(p_caption_id)`: Called by an athlete to cast their vote for one of the captions. Includes logic to prevent voting for one's own caption and voting multiple times.
+*   `tally_caption_votes_and_finalize_round(p_round_id)`: Called by clients when the caption voting timer ends. It tallies the votes, selects winning caption(s), awards points, and updates the room status to `round-results`.
+*   `get_round_results_details(p_round_id)`: A helper function to fetch all results data for a round, including winning captions and their associated memes.
 
 ### Authentication & Authorization (RLS):
 
@@ -173,7 +167,7 @@ The application uses Ably for real-time communication between athletes in a game
   * `athlete-name-update` - When an athlete changes their name
   * `game-starting` - When the game is about to start (countdown)
   * `game-phase-changed` - When the game moves from one phase to another
-  * `meme-selected-for-round` - When a meme is selected for the round
+  * `meme-selected` - When an athlete selects their meme
   * `caption-submitted` - When an athlete submits a caption
   * `round-results-ready` - When round results are available
   * `final-results` - When final game results are available

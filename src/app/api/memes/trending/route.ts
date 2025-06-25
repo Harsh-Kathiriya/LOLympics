@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   featuredUrl.searchParams.set('key', apiKey);
   featuredUrl.searchParams.set('client_key', clientKey);
   featuredUrl.searchParams.set('limit', '24');
-  featuredUrl.searchParams.set('media_filter', 'gif');
+  featuredUrl.searchParams.set('media_formats', 'gif,tinygif');
 
   // Forward the `pos` param for pagination if it exists
   const pos = request.nextUrl.searchParams.get('pos');

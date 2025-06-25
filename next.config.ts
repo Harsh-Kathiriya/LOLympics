@@ -16,8 +16,14 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'media.tenor.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
-    domains: ['placehold.co'],
+    domains: ['placehold.co', 'media.tenor.com'],
     unoptimized: process.env.NODE_ENV === 'development',
   },
 };

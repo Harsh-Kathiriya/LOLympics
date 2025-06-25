@@ -1,15 +1,15 @@
 /**
  * CaptionVotingPage Component
  *
- * This component manages the caption voting phase of the game. It displays the
- * round's meme and the captions submitted by players. Players vote for their
+ * This component manages the caption voting phase of the game. It displays each
+ * player's meme with their caption positioned on it. Players vote for their
  * favorite caption within a time limit.
  *
  * Core Logic:
  * 1.  Initialization: Fetches room, player, and current round data.
  * 2.  Waiting Phase: Polls the database until all players have submitted captions.
  * 3.  Voting Phase:
- *     - Displays the meme and all submitted captions.
+ *     - Displays each player's meme with their caption positioned on it.
  *     - Players can select a caption and confirm their vote.
  *     - Own captions are disabled.
  * 4.  Real-time Updates (Ably):
@@ -27,8 +27,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { TimerBar } from '@/components/game/timer-bar';
 import { CaptionCard } from '@/components/game/caption-card';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ThumbsUp, Vote, CheckCircle, Loader2 } from 'lucide-react';
+import { Card, CardContent } from '@/components/ui/card';
+import { ThumbsUp, Vote, CheckCircle, Loader2, Clock } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from '@/lib/supabase';
 import { useRoomChannel, RoomEvent, GamePhaseChangedPayload, CaptionVoteCastPayload } from '@/hooks/use-room-channel';
@@ -43,6 +43,10 @@ type Caption = {
   text_content: string;
   player_id: string;
   round_id: string;
+  position_x: number;
+  position_y: number;
+  memeUrl?: string; // The URL of the meme this caption is for
+  playerName?: string; // The name of the player who submitted this caption
 };
 
 export default function CaptionVotingPage() {
@@ -56,7 +60,6 @@ export default function CaptionVotingPage() {
   const [roomInfo, setRoomInfo] = useState<{ id: string; current_round_number: number } | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
-  const [memeUrl, setMemeUrl] = useState<string>('');
   const [roundId, setRoundId] = useState<string | null>(null);
   // Tracks which players have voted to update the UI and determine when everyone has voted.
   const [votedPlayerIds, setVotedPlayerIds] = useState<Set<string>>(new Set());
@@ -72,58 +75,96 @@ export default function CaptionVotingPage() {
   // Establishes a real-time connection to the room's channel via Ably.
   const roomChannel = useRoomChannel(roomCode);
 
+  // Step 1: Fetch initial room and player data.
   useEffect(() => {
-    // Fetches the current user and room information on component mount.
-    const initialize = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-          toast({ title: 'Not authenticated!', variant: 'destructive' });
+    const fetchInitialData = async () => {
+      try {
+        // Get the user's ID to identify their own captions later.
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) setCurrentUserId(user.id);
+        
+        // Get room info from the room code.
+        const { data: roomData, error: roomError } = await supabase
+          .from('rooms')
+          .select('id, current_round_number')
+          .eq('room_code', roomCode)
+          .single();
+          
+        if (roomError || !roomData) {
+          toast({ title: "Error finding room", description: "This room doesn't seem to exist.", variant: "destructive" });
           router.push('/');
           return;
+        }
+        
+        setRoomInfo(roomData);
+        
+        // Get the current round ID.
+        const { data: roundData, error: roundError } = await supabase
+          .from('rounds')
+          .select('id')
+          .eq('room_id', roomData.id)
+          .eq('round_number', roomData.current_round_number)
+          .single();
+          
+        if (roundError || !roundData) {
+          toast({ title: "Error finding round", description: "Could not find the current round.", variant: "destructive" });
+          router.push(`/room/${roomCode}`);
+          return;
+        }
+        
+        setRoundId(roundData.id);
+        
+        // Get all players in the room.
+        const { data: playerData, error: playerError } = await supabase
+          .from('players')
+          .select('*')
+          .eq('room_id', roomData.id);
+          
+        if (playerError) {
+          toast({ title: "Error loading players", description: playerError.message, variant: "destructive" });
+        } else {
+          setPlayers(playerData || []);
+        }
+      } catch (error: any) {
+        console.error("Error in initial data fetch:", error);
+        toast({ title: "Error", description: "Something went wrong loading the game.", variant: "destructive" });
       }
-      setCurrentUserId(user.id);
-
-      const { data: roomData, error: roomError } = await supabase
-        .from('rooms')
-        .select('id, current_round_number')
-        .eq('room_code', roomCode)
-        .single();
-      
-      if (roomError || !roomData) {
-        toast({ title: 'Error fetching room data', variant: 'destructive' });
-        return;
-      }
-      setRoomInfo(roomData);
     };
-    initialize();
+    
+    fetchInitialData();
   }, [roomCode, router, toast]);
 
-  useEffect(() => {
-    if (!roomInfo) return;
+  // Function to tally votes and end the round.
+  const tallyVotesAndEndRound = useCallback(async () => {
+    if (!roundId || hasTallied.current) return;
     
-    // Fetches details for the current round (meme, etc.) and the list of players in the room.
-    const fetchRoundAndPlayers = async () => {
+    // Set a flag to prevent multiple calls.
+    hasTallied.current = true;
+    
+    try {
+      // This RPC tallies the votes, awards points, and updates the room status.
+      const { data, error } = await supabase.rpc('tally_caption_votes_and_finalize_round', {
+        p_round_id: roundId
+      });
+      
+      if (error) throw error;
+      
+      // Broadcast phase change so all clients navigate.
       try {
-        const { data: roundInfo, error: roundInfoError } = await supabase.rpc('get_current_round_info', { p_room_id: roomInfo.id });
-        const currentRound = Array.isArray(roundInfo) ? roundInfo[0] : roundInfo;
-        
-        if (roundInfoError || !currentRound) throw new Error("Couldn't load the current round.");
-        
-        setRoundId(currentRound.round_id);
-        setMemeUrl(currentRound.meme_image_url);
-        
-        const { data: playersData, error: playersError } = await supabase.from('players').select('*').eq('room_id', roomInfo.id);
-        if (playersError || !playersData) throw new Error("Couldn't fetch players.");
-        
-        setPlayers(playersData);
-        
-      } catch (error: any) {
-        toast({ title: 'Error', description: error.message, variant: 'destructive' });
+        await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'round-results' });
+      } catch (pubErr) {
+        console.warn('Unable to publish phase change via Ably:', pubErr);
       }
-    };
-    
-    fetchRoundAndPlayers();
-  }, [roomInfo, toast]);
+
+      // Navigate immediately as a fallback (in case Ably publish fails or we are the only client)
+      router.push(`/room/${roomCode}/round-results`);
+      
+    } catch (error: any) {
+      console.error("Error tallying votes:", error);
+      toast({ title: "Error", description: "Could not finalize the round.", variant: "destructive" });
+      hasTallied.current = false; // Reset flag to allow retry.
+    }
+  }, [roundId, toast, roomChannel, router, roomCode]);
 
   useEffect(() => {
     // This effect handles the "waiting" phase. It polls the DB to check if all players have submitted captions.
@@ -146,54 +187,66 @@ export default function CaptionVotingPage() {
       // Once all captions are in, fetch them and switch to the voting view.
       if (count !== null && count >= totalPlayers) {
         clearInterval(intervalId);
-        const { data: finalCaptions, error: finalCaptionsError } = await supabase
-          .from('captions')
-          .select('*')
-          .eq('round_id', roundId);
         
-        if (finalCaptionsError) {
+        // Get captions with player info and meme URLs
+        const { data: captionsData, error: captionsError } = await supabase
+          .from('captions')
+          .select(`
+            id, 
+            text_content, 
+            player_id, 
+            round_id,
+            position_x,
+            position_y,
+            players:player_id (username)
+          `)
+          .eq('round_id', roundId);
+          
+        if (captionsError) {
           toast({ title: 'Error fetching captions', variant: 'destructive' });
-        } else {
-          setCaptions(finalCaptions || []);
+          return;
         }
+        
+        // Get meme URLs for each player's selected meme
+        const enhancedCaptions = await Promise.all((captionsData || []).map(async (caption) => {
+          const { data: memeData, error: memeError } = await supabase
+            .from('player_round_memes')
+            .select(`
+              memes:meme_id (image_url)
+            `)
+            .eq('round_id', roundId)
+            .eq('player_id', caption.player_id)
+            .single();
+
+          // Safely extract username (handles array or object)
+          let playerName: string | undefined;
+          if (Array.isArray((caption as any).players)) {
+            playerName = (caption as any).players[0]?.username;
+          } else if ((caption as any).players) {
+            playerName = (caption as any).players.username;
+          }
+
+          // Safely extract meme URL (handles array or object)
+          let memeUrl: string | undefined;
+          if (!memeError && memeData) {
+            const memesField: any = (memeData as any).memes;
+            memeUrl = Array.isArray(memesField) ? memesField[0]?.image_url : memesField?.image_url;
+          }
+
+          return {
+            ...caption,
+            playerName: playerName || 'Unknown Player',
+            memeUrl,
+          };
+        }));
+        
+        setCaptions(enhancedCaptions || []);
         setIsWaiting(false);
       }
     }, 2500);
 
     return () => clearInterval(intervalId);
   }, [roundId, players, isWaiting, toast]);
-
-  // This function is called when the timer runs out or all players have voted.
-  const tallyVotesAndEndRound = useCallback(async () => {
-    // Use a ref to ensure this is only called once per client.
-    if (hasTallied.current || !roundId) return;
-    hasTallied.current = true;
-    
-    toast({ title: 'Voting ended!', description: 'Tallying the results...' });
-    
-    try {
-      // This RPC now includes a server-side check. It only tallies if all votes are in the DB.
-      // It returns `true` if it successfully finalized the round, `false` otherwise.
-      const { data: finalized, error } = await supabase.rpc('tally_caption_votes_and_finalize_round', { p_round_id: roundId });
-      
-      if (error) throw error;
-      
-      // Only the client that successfully triggers the finalization will publish the event.
-      if (finalized) {
-        await roomChannel.publish<GamePhaseChangedPayload>(RoomEvent.GAME_PHASE_CHANGED, { phase: 'round-results' });
-      } else {
-        // This can happen if this client's trigger was premature. 
-        // Resetting the ref allows this client to potentially try again if needed.
-        hasTallied.current = false;
-      }
-    } catch (error: any) {
-      if (error.code !== '23505') { // Ignore unique violation errors, which can happen in race conditions.
-        console.error('Error tallying votes:', error);
-        toast({ title: "Error tallying votes", description: error.message, variant: 'destructive' });
-        hasTallied.current = false; // Reset if there was a real error.
-      }
-    }
-  }, [roundId, roomChannel, toast]);
 
   useEffect(() => {
     // Sets up Ably subscriptions for real-time events.
@@ -254,37 +307,34 @@ export default function CaptionVotingPage() {
     const caption = captions.find(c => c.id === selectedCaptionId);
     if (!caption) return;
     
-    // Optimistically update the UI to show the vote has been cast.
+    // Mark as voted locally (disables UI)
     setHasVoted(caption.id);
-    setVotedPlayerIds(prev => new Set(prev).add(currentUserId));
-    
+
     try {
-      // Call the server function to securely record the vote.
+      // 1. Persist vote in DB
       const { error } = await supabase.rpc('submit_caption_vote', { p_caption_id: caption.id });
       if (error) throw error;
-      
-      // Announce the vote to other clients via Ably.
+
+      // 2. Now that the vote is stored, update local voted list
+      setVotedPlayerIds(prev => new Set(prev).add(currentUserId));
+
+      // 3. Broadcast to other clients
       await roomChannel.publish<CaptionVoteCastPayload>(RoomEvent.CAPTION_VOTE_CAST, {
         voterPlayerId: currentUserId,
-        votedForCaptionId: caption.id
+        votedForCaptionId: caption.id,
       });
-      
+
       toast({
         title: 'Vote Cast!',
         description: 'Your vote has been recorded.',
         className: 'bg-card border-primary text-card-foreground',
       });
     } catch (error: any) {
-      console.error("Error casting vote:", error);
+      console.error('Error casting vote:', error);
       toast({ title: 'Vote Failed', description: error.message, variant: 'destructive' });
-      
-      // Revert the optimistic UI update if the vote failed.
+
+      // Roll back voted state
       setHasVoted(null);
-      setVotedPlayerIds(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(currentUserId!);
-        return newSet;
-      });
     }
   };
 
@@ -301,109 +351,105 @@ export default function CaptionVotingPage() {
 
   return (
     <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        {/* Left Column: Meme and Game Info */}
-        <div className="lg:col-span-1 space-y-6 lg:sticky top-24">
-          <Card className="shadow-xl card-jackbox border-2 border-primary/70 overflow-hidden">
-            <CardHeader className="text-center pb-2">
-              <CardTitle className="font-headline text-3xl text-primary title-jackbox">The Meme</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-lg overflow-hidden shadow-lg border border-border">
-                <img
-                  src={memeUrl}
-                  alt="Meme to be captioned"
-                  className="w-full max-h-[400px] object-contain bg-black"
-                />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="shadow-xl card-jackbox border-2 border-primary/70">
-            <CardHeader>
-              <CardTitle className="font-headline text-2xl text-primary title-jackbox flex items-center">
-                <Vote className="mr-3 h-6 w-6"/>
-                Voting Status
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-lg text-center">
-                <span className="font-bold text-accent">{votedPlayerIds.size}</span> out of <span className="font-bold text-accent">{players.length}</span> players have voted.
-              </p>
-              <div className="mt-4 flex justify-center space-x-2">
-                {players.map(p => (
-                  <PlayerAvatar 
-                    key={p.id}
-                    name={p.username}
-                    avatarUrl={p.avatar_src ?? undefined}
-                    isReady={votedPlayerIds.has(p.id)}
-                  />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Right Column: Title, Timer, Captions, and Actions */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card className="shadow-xl card-jackbox border-2 border-primary/70 text-center">
-            <CardHeader>
-              <CardTitle className="font-headline text-4xl text-primary title-jackbox">Vote for the Best Caption!</CardTitle>
-              <CardDescription>
-                You have {CAPTION_VOTING_DURATION} seconds to pick your favorite. Choose wisely!
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <TimerBar durationSeconds={CAPTION_VOTING_DURATION} onTimeUp={tallyVotesAndEndRound} />
-            </CardContent>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {captions.map((caption, index) => {
-              const isOwnCaption = caption.player_id === currentUserId;
-              return (
-                <div
-                  key={caption.id}
-                  className="h-full"
-                  onClick={() => handleSelectCaption(caption)}
-                >
-                  <CaptionCard
-                    captionText={caption.text_content}
-                    captionNumber={index + 1}
-                    isVoted={selectedCaptionId === caption.id}
-                    className={`transition-all duration-200 ${isOwnCaption ? "border-primary/50 bg-primary/5 cursor-not-allowed opacity-70" : "cursor-pointer hover:scale-105 hover:border-accent"}`}
-                  />
-                </div>
-              );
-            })}
-          </div>
-
-          {!hasVoted && (
-            <div className="pt-4 flex justify-center">
-              <Button 
-                size="lg" 
-                onClick={handleConfirmVote} 
-                disabled={!selectedCaptionId || !!hasVoted}
-                className="font-bold text-lg bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[300px] h-16 shadow-lg transform hover:scale-105 transition-transform"
-              >
-                <ThumbsUp className="mr-3 h-7 w-7" />
-                Lock In Your Vote
-              </Button>
-            </div>
-          )}
-
-          {hasVoted && (
-            <div className="pt-4 text-center">
-              <Card className="bg-background/80 p-6 inline-block">
-                <h3 className="font-headline text-2xl text-primary flex items-center justify-center">
-                  <CheckCircle className="mr-3 h-8 w-8 text-green-500"/>
-                  Vote Locked In!
-                </h3>
-                <p className="text-muted-foreground mt-2">Waiting for the other players to cast their votes...</p>
-              </Card>
-            </div>
-          )}
+      {/* Header Section */}
+      <div className="text-center mb-8">
+        <h1 className="font-headline text-5xl text-primary title-jackbox mb-2">Vote for the Gold Medal Caption!</h1>
+        <p className="text-muted-foreground text-lg mb-6">You have {CAPTION_VOTING_DURATION} seconds to crown a champion. Choose wisely, judge!</p>
+        
+        {/* Timer Bar - No box around it */}
+        <div className="max-w-3xl mx-auto mb-8">
+          <TimerBar durationSeconds={CAPTION_VOTING_DURATION} onTimeUp={tallyVotesAndEndRound} />
         </div>
       </div>
+
+      {/* Voting Status - More compact design */}
+      <div className="bg-background/60 backdrop-blur-sm rounded-xl p-4 mb-8 max-w-2xl mx-auto border border-border/50 shadow-lg">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center">
+            <Vote className="h-6 w-6 text-accent mr-2" />
+            <h2 className="font-headline text-xl text-primary">
+              <span className="text-accent font-bold">{votedPlayerIds.size}</span> out of <span className="text-accent font-bold">{players.length}</span> players have voted
+            </h2>
+          </div>
+          <div className="flex space-x-1">
+            {players.map(p => (
+              <PlayerAvatar 
+                key={p.id}
+                name={p.username}
+                avatarUrl={p.avatar_src ?? undefined}
+                isReady={votedPlayerIds.has(p.id)}
+                size="sm"
+                compact={true}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Captions Grid - More prominent cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+        {captions.map((caption, index) => {
+          const isOwnCaption = caption.player_id === currentUserId;
+          const isSelected = selectedCaptionId === caption.id;
+          return (
+            <div
+              key={caption.id}
+              onClick={() => handleSelectCaption(caption)}
+              className={`transform transition-all duration-300 ${isSelected ? 'scale-105' : ''} ${isOwnCaption ? 'opacity-70' : 'hover:scale-102'}`}
+            >
+              <CaptionCard
+                captionText={caption.text_content}
+                captionNumber={index + 1}
+                isVoted={isSelected}
+                memeImageUrl={caption.memeUrl}
+                positionX={caption.position_x}
+                positionY={caption.position_y}
+                showOverlay={true}
+                className={`shadow-xl transition-all duration-200 ${
+                  isOwnCaption 
+                    ? "border-primary/50 bg-primary/5 cursor-not-allowed" 
+                    : isSelected
+                      ? "border-accent border-4 shadow-accent/30"
+                      : "cursor-pointer hover:border-accent/70 border-2"
+                }`}
+              />
+              <div className="mt-3 text-center">
+                <span className={`font-medium text-lg px-4 py-1 rounded-full ${isOwnCaption ? 'bg-primary/20 text-primary' : 'bg-background/80 text-foreground'}`}>
+                  {isOwnCaption ? '✏️ Your Caption' : caption.playerName || "Player"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Vote Button - More prominent */}
+      {!hasVoted && (
+        <div className="flex justify-center mb-8">
+          <Button 
+            size="lg" 
+            onClick={handleConfirmVote} 
+            disabled={!selectedCaptionId || !!hasVoted}
+            className="font-bold text-xl bg-accent hover:bg-accent/80 text-accent-foreground btn-jackbox min-w-[300px] h-16 shadow-xl transform hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ThumbsUp className="mr-3 h-7 w-7" />
+            Lock In Your Vote
+          </Button>
+        </div>
+      )}
+
+      {/* Vote Confirmation - More visually appealing */}
+      {hasVoted && (
+        <div className="flex justify-center mb-8">
+          <div className="bg-gradient-to-r from-accent/20 to-primary/20 backdrop-blur-sm rounded-xl p-6 text-center border border-accent/30 shadow-lg animate-pulse">
+            <h3 className="font-headline text-2xl text-primary flex items-center justify-center">
+              <CheckCircle className="mr-3 h-8 w-8 text-green-500"/>
+              Vote Locked In!
+            </h3>
+            <p className="text-muted-foreground mt-2">Waiting for the other players to cast their votes...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

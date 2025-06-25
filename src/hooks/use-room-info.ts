@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 interface RoomInfo {
   id: string;
   current_round_number: number;
+  status: string;
 }
 
 interface UseRoomInfoResult {
@@ -30,7 +31,7 @@ export function useRoomInfo(roomCode: string): UseRoomInfoResult {
       try {
         const { data, error } = await supabase
           .from('rooms')
-          .select('id, current_round_number')
+          .select('id, current_round_number, status')
           .eq('room_code', roomCode)
           .single();
 

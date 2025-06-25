@@ -28,7 +28,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { LeaderboardSnippet } from '@/components/game/leaderboard-snippet';
 import { PlayerAvatar } from '@/components/game/player-avatar';
 import { Award, ArrowRightCircle, Loader2, Users } from 'lucide-react';
@@ -38,6 +38,7 @@ import { useRoomChannel, RoomEvent, GamePhaseChangedPayload } from '@/hooks/use-
 import { ROUND_RESULTS_DURATION } from '@/lib/constants';
 import { soundManager } from '@/lib/sound';
 import { launchConfetti } from '@/lib/confetti';
+import Image from 'next/image';
 
 type WinningCaption = {
   id: string;
@@ -45,6 +46,9 @@ type WinningCaption = {
   authorId: string;
   authorName: string;
   avatarUrl?: string;
+  memeUrl: string;
+  positionX: number;
+  positionY: number;
 };
 
 type RoundResult = {
@@ -185,25 +189,66 @@ export default function RoundResultsPage() {
     if (winningCaptions.length === 1) {
       const winner = winningCaptions[0];
       return (
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 pt-12 text-center">
-            <p className="text-3xl font-bold text-white leading-tight drop-shadow-lg">"{winner.text}"</p>
+        <div className="absolute inset-0 p-0">
+          <Image
+            src={winner.memeUrl}
+            alt="Winning meme"
+            width={800}
+            height={600}
+            className="w-full h-full object-contain bg-black"
+            sizes="(max-width: 768px) 100vw, 800px"
+            priority
+          />
+          <div 
+            className="absolute p-2 bg-black/70 text-white font-bold text-center rounded"
+            style={{
+              left: `${winner.positionX}%`,
+              top: `${winner.positionY}%`,
+              transform: 'translate(-50%, -50%)',
+              maxWidth: '80%',
+              textShadow: '1px 1px 2px black'
+            }}
+          >
+            {winner.text}
+          </div>
+          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/70 to-transparent p-6 pt-12 text-center">
             <p className="text-lg text-accent mt-3 font-semibold">GOLD MEDAL: {winner.authorName} (+{pointsAwarded} points)</p>
+          </div>
         </div>
       );
     }
 
     // Special UI to handle ties, listing all winners.
     return (
-      <div className="absolute inset-0 bg-black/80 p-4 flex flex-col justify-center items-center text-center">
+      <div className="absolute inset-0 bg-black/80 p-4 flex flex-col items-center text-center overflow-y-auto gap-6">
         <h3 className="font-headline text-3xl text-yellow-400 font-bold tracking-wider animate-pulse">
           PHOTO FINISH!
         </h3>
         <p className="text-muted-foreground mb-4">{winningCaptions.length} athletes tied for GOLD!</p>
-        <div className="flex flex-wrap justify-center gap-4">
+        <div className="flex flex-wrap justify-center gap-4 w-full">
           {winningCaptions.map(winner => (
-            <div key={winner.id} className="bg-black/50 p-3 rounded-lg max-w-xs">
+            <div key={winner.id} className="bg-black/50 p-3 rounded-lg max-w-[90vw] sm:max-w-xs relative">
+              <Image
+                src={winner.memeUrl}
+                alt={`${winner.authorName}'s meme`}
+                width={400}
+                height={300}
+                className="w-full object-contain bg-black max-h-[200px]"
+                sizes="(max-width: 768px) 100vw, 400px"
+              />
+              <div 
+                className="absolute p-2 bg-black/70 text-white font-bold text-center rounded"
+                style={{
+                  left: `${winner.positionX}%`,
+                  top: `${winner.positionY}%`,
+                  transform: 'translate(-50%, -50%)',
+                  maxWidth: '80%',
+                  textShadow: '1px 1px 2px black'
+                }}
+              >
+                {winner.text}
+              </div>
               <PlayerAvatar name={winner.authorName} avatarUrl={winner.avatarUrl} size="sm" />
-              <p className="text-white text-lg mt-2">"{winner.text}"</p>
             </div>
           ))}
         </div>
@@ -232,7 +277,6 @@ export default function RoundResultsPage() {
         </CardHeader>
         <CardContent className="p-6 space-y-8">
           <Card className="relative shadow-lg border-2 border-accent overflow-hidden min-h-[300px]">
-            <img src={results.memeUrl} alt="Medal-winning meme" className="w-full h-full object-cover" />
             {renderWinnerInfo()}
           </Card>
           <LeaderboardSnippet players={results.players} currentPlayerId={currentUserId || undefined} />

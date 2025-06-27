@@ -14,7 +14,7 @@ export const SOUNDS = {
   FINAL_RESULT: '/assets/sounds/finalResult2.mp3',
   
   // Background music
-  BACKGROUND_MUSIC: '/assets/sounds/background.MP3',
+  BACKGROUND_MUSIC: '/assets/sounds/background.mp3',
 };
 
 // Singleton class to manage sound across the application

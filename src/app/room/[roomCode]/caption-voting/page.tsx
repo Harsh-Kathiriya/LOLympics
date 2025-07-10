@@ -438,15 +438,15 @@ export default function CaptionVotingPage() {
         </div>
       )}
 
-      {/* Vote Confirmation - More visually appealing */}
+      {/* Vote Confirmation - Styled to match page theme */}
       {hasVoted && (
         <div className="flex justify-center mb-8">
-          <div className="bg-gradient-to-r from-accent/20 to-primary/20 backdrop-blur-sm rounded-xl p-6 text-center border border-accent/30 shadow-lg animate-pulse">
-            <h3 className="font-headline text-2xl text-primary flex items-center justify-center">
-              <CheckCircle className="mr-3 h-8 w-8 text-green-500"/>
+          <div className="bg-background/60 backdrop-blur-sm rounded-xl p-6 text-center border border-primary/50 shadow-xl max-w-md">
+            <h3 className="font-headline text-2xl text-primary flex items-center justify-center mb-3">
+              <CheckCircle className="mr-3 h-8 w-8 text-accent"/>
               Vote Locked In!
             </h3>
-            <p className="text-muted-foreground mt-2">Waiting for the other players to cast their votes...</p>
+            <p className="text-muted-foreground">Waiting for the other players to cast their votes...</p>
           </div>
         </div>
       )}
